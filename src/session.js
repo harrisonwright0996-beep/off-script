@@ -42,6 +42,18 @@ const LABELS = { due: 'Check', new: 'New', beat: 'Beat run', run: 'Run' };
 // The card for each go a line can need: read it (then the first letters), the first letters, or the cue alone.
 const STEP = { read: 'front', help: 'help', clean: 'floor', done: 'floor' };
 
+// What a saved chosen practice still has to go: lines not yet reached, the rest of the one under way,
+// and lines still owed a go.
+export function linesLeft(saved) {
+  const c = saved && saved.custom;
+  if (!c) return 0;
+  const left = new Set(c.itemIds.slice(c.pos || 0));
+  const t = saved.task;
+  if (t && !t.done) for (const id of t.kind === 'seq' ? t.ids.slice(t.pos) : [t.id]) left.add(id);
+  for (const [id, line] of Object.entries(saved.lines)) if (line.need !== 'done') left.add(id);
+  return left.size;
+}
+
 // What one sprint keeps: the round under way, the beats resting from the last one, every line it has
 // shown, how many goes so far (gaps are counted in these), and whether time is up.
 const sprintState = () => ({ round: null, rest: [], lines: {}, goes: 0, tests: 0, closing: false, task: null, planDone: false });
@@ -386,13 +398,17 @@ export function createSession({ model, index, getPlan, getState, settings, scope
       return { event, state, snapshot, need: line.need, help, later };
     },
 
-    // Time is up: nothing new from here. A run under way stops; what it showed comes back on its own.
+    // Time is up: nothing new from here. A run under way stops; what it showed comes back on its own,
+    // and in a chosen practice the lines it had not reached are kept for when he carries on.
     close() {
       if (S.closing) return;
       S.closing = true;
       S.round = null;
       S.againSaid = true;
-      if (S.task && S.task.kind === 'seq') S.task.done = true;
+      if (S.task && S.task.kind === 'seq') {
+        if (S.task.custom) S.custom.pos -= S.task.ids.length - S.task.pos;
+        S.task.done = true;
+      }
       if ((S.task && !S.task.done) || Object.keys(S.lines).some(owing)) S.message = CLOSING_MESSAGE;
     },
 

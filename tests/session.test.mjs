@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { fakeApp, learn } from './helpers.mjs';
-import { createSession, TEACH_FIRST_MESSAGE, AHEAD_MESSAGE, EXTRA_RUN_MESSAGE, AGAIN_MESSAGE, CLOSING_MESSAGE } from '../src/session.js';
+import { createSession, linesLeft, TEACH_FIRST_MESSAGE, AHEAD_MESSAGE, EXTRA_RUN_MESSAGE, AGAIN_MESSAGE, CLOSING_MESSAGE } from '../src/session.js';
 import { makeResult } from '../src/grade.js';
 
 const start = (app, opts = {}) =>
@@ -363,4 +363,37 @@ test('chosen practice: lines from several scenes, as runs where they follow on, 
   assert.deepEqual(letters, [`due:help:${sc3[4]}`, `again:floor:${sc3[4]}`], 'first letters first, even for a secure line');
   const read = play(app, start(app, { custom: { itemIds: [sc3[4]], help: 'read' } }));
   assert.deepEqual(read, [`due:front:${sc3[4]}`, `due:help:${sc3[4]}`, `again:floor:${sc3[4]}`], 'read it, first letters, then without');
+});
+
+test('a chosen practice saved part way says how many lines it still has to go', () => {
+  const app = fakeApp();
+  const ids = app.model.scenes[3].itemIds;
+  learn(app, ids, { stability: 1, hoursAgo: 1.5, ...SECURE });
+  const s = start(app, { custom: { itemIds: ids, help: 'none' } });
+  assert.equal(linesLeft(s.save()), 6);
+  s.advance(); // one run over all six
+  answer(app, s, false);
+  assert.equal(linesLeft(s.save()), 6, 'five still to come in the run, and the one missed');
+  for (let i = 0; i < 5; i++) {
+    s.advance();
+    answer(app, s, true);
+  }
+  assert.equal(linesLeft(s.save()), 1, 'just the one missed');
+  assert.equal(linesLeft(start(app).save()), 0, 'not a chosen practice');
+});
+
+test('time up in a chosen practice keeps the lines it had not reached, so it can carry on with them', () => {
+  const app = fakeApp();
+  const ids = app.model.scenes[3].itemIds;
+  learn(app, ids, { stability: 48, hoursAgo: 1, ...SECURE });
+  const s = start(app, { custom: { itemIds: ids, help: 'none', title: 'Scene 3, every line' } });
+  s.advance(); // one run over all six
+  answer(app, s, true);
+  s.close();
+  assert.equal(s.advance(), null, 'the run stops at time up');
+  s.finish();
+  assert.equal(linesLeft(s.save()), 5);
+  const later = start(app, { saved: s.save() });
+  const c = later.advance();
+  assert.deepEqual([c.item.id, c.progress.total], [ids[1], 5], 'carrying on: a run of the five not reached');
 });

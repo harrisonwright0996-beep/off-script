@@ -14,8 +14,9 @@ import { showSprint } from './ui/sprint.js';
 import { showScenes, showReader } from './ui/scenes.js';
 import { showSettings } from './ui/settings.js';
 import { showWalk } from './ui/walk.js';
+import { showChoose } from './ui/choose.js';
 
-const SCREENS = { install: showInstall, setup: showSetup, today: showToday, sprint: showSprint, scenes: showScenes, reader: showReader, settings: showSettings, walk: showWalk };
+const SCREENS = { install: showInstall, setup: showSetup, today: showToday, sprint: showSprint, scenes: showScenes, reader: showReader, settings: showSettings, walk: showWalk, choose: showChoose };
 const EVENT_DAYS = 9; // the plan looks back this far
 
 export function applyLook(s) {

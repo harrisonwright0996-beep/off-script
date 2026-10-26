@@ -3,7 +3,7 @@
 // and so is the sprint, so closing the app loses nothing. Time is a slim bar that only moves when he
 // does something; at time up nothing new comes, only the lines still to finish, then Sprint done.
 import { h, clear, screen, button, announce, focusHeading, num, plural } from './dom.js';
-import { createSession } from '../session.js';
+import { createSession, linesLeft } from '../session.js';
 import { createTypeCheck, sayMisses, makeResult, describeResult } from '../grade.js';
 import { firstLettersLine } from '../tokens.js';
 import { canSpeak, speak, stopSpeaking } from '../tts.js';
@@ -11,6 +11,7 @@ import { untilText } from '../plan.js';
 import { keypad } from './keypad.js';
 
 const SAVED = 'sprint';
+export const PRACTICE = 'practice'; // a chosen practice, saved apart from the day's sprint
 const IDLE_CAP = 150000; // a longer pause between taps was a break: it is not counted as sprint time
 const AUTO_ADVANCE_MS = 1200;
 
@@ -44,13 +45,18 @@ function comesBack(rec, pass) {
 
 // scope: 'all' or 'tests' (Just 2 minutes). minutes: the sprint length (settings by default).
 // custom: { scene, itemIds } for Run this scene. extra: 'new' or 'runs' to keep going after the plan.
-export async function showSprint(ctx, { scope = 'all', minutes = null, custom = null, extra = null } = {}) {
+// practice: a chosen practice ({ scene, which, help, itemIds, title }), or 'resume' to carry on the
+// one saved.
+export async function showSprint(ctx, { scope = 'all', minutes = null, custom = null, extra = null, practice = null } = {}) {
   const today = ctx.today();
   const length = (minutes ?? ctx.settings.sprintMinutes) * 60000;
   const short = minutes != null && minutes <= 2;
-  const resumable = scope === 'all' && !custom;
-  const saved = resumable ? await ctx.store.get(SAVED) : null;
+  const key = practice ? PRACTICE : SAVED;
+  const resumable = !!practice || (scope === 'all' && !custom);
+  const fresh = !!practice && practice !== 'resume'; // a new chosen practice starts afresh
+  const saved = resumable && !fresh ? await ctx.store.get(key) : null;
   const usable = !!saved && saved.day === today && saved.hash === ctx.model.hash;
+  if (practice === 'resume' && !usable) return ctx.go('choose');
   ctx.refit();
 
   const session = createSession({
@@ -60,9 +66,10 @@ export async function showSprint(ctx, { scope = 'all', minutes = null, custom = 
     getState: ctx.getState,
     settings: ctx.settings,
     scope,
-    custom,
+    custom: fresh ? practice : custom,
     saved: usable ? saved.state : null,
   });
+  const chosen = practice ? session.state.custom : null; // the chosen practice under way
   const startStats = { ...session.stats };
   const undo = [];
   let elapsed = usable ? saved.elapsed || 0 : 0;
@@ -85,7 +92,7 @@ export async function showSprint(ctx, { scope = 'all', minutes = null, custom = 
 
   async function saveSprint() {
     if (!resumable) return;
-    await ctx.store.set(SAVED, { day: today, hash: ctx.model.hash, state: session.save(), elapsed: finished ? 0 : elapsed });
+    await ctx.store.set(key, { day: today, hash: ctx.model.hash, state: session.save(), elapsed: finished ? 0 : elapsed });
   }
 
   function quiet() {
@@ -365,8 +372,11 @@ export async function showSprint(ctx, { scope = 'all', minutes = null, custom = 
         status.textContent = 'Break over. Ready when you are.';
       }
     }, 10000);
-    plain('Sprint done', [h('p', { class: 'lead' }, statsLine(st)), h('h2', {}, 'Break'), bar, status], [
-      button('Another sprint', () => ctx.go('sprint'), { class: 'btn primary' }),
+    const left = chosen ? linesLeft(session.state) : 0;
+    plain('Sprint done', [h('p', { class: 'lead' }, statsLine(st)), left ? h('p', {}, `${plural(left, 'line')} of this practice still to go.`) : null, h('h2', {}, 'Break'), bar, status], [
+      left
+        ? button('Carry on', () => ctx.go('sprint', { practice: 'resume' }), { class: 'btn primary' })
+        : button('Another sprint', () => ctx.go('sprint'), { class: 'btn primary' }),
       button('Stop for now', () => ctx.go('today')),
     ]);
   }
@@ -376,6 +386,12 @@ export async function showSprint(ctx, { scope = 'all', minutes = null, custom = 
     const plan = ctx.plan();
     const nextCheck = plan.nextAt ? h('p', {}, `The next check is ready ${untilText(plan.nextAt, Date.now(), plan.day)}.`) : null;
     const said = st.answered ? h('p', {}, statsLine(st)) : null;
+    if (chosen) {
+      return plain('Practice done', [h('p', { class: 'lead' }, `${chosen.title}.`), said], [
+        button('Choose again', () => ctx.go('choose'), { class: 'btn primary' }),
+        button('Today', () => ctx.go('today')),
+      ]);
+    }
     if (custom) {
       return plain('Run done', [h('p', { class: 'lead' }, `That was a run of ${heading(custom.scene)}.`), said], [
         button('Back to the scene', () => ctx.go('reader', { scene: custom.scene }), { class: 'btn primary' }),

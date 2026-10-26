@@ -57,6 +57,13 @@ for (const theme of ['cream', 'light', 'dark']) {
     await check(page, 'card: say', found);
     await page.getByRole('button', { name: 'Stop' }).click();
 
+    await page.getByRole('button', { name: 'Choose what to practise' }).click();
+    await expect(page.getByRole('heading', { name: 'Choose what to practise' })).toBeVisible(); // drawn once any saved practice is read
+    await check(page, 'choose', found);
+    await page.getByLabel('Which lines').selectOption({ label: 'Every line' });
+    await check(page, 'choose: every line', found);
+    await page.getByRole('button', { name: 'Today', exact: true }).click();
+
     await page.getByRole('button', { name: 'Scenes' }).click();
     await check(page, 'scenes', found);
     await page.getByRole('button', { name: /Scene 1: The Harbour/ }).click();
