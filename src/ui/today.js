@@ -69,7 +69,9 @@ export function showToday(ctx) {
       body.push(h('div', { class: 'notice' }, h('p', {}, 'A new version is ready.'), button('Update now', () => ctx.applyUpdate(), { class: 'btn' })));
     }
     body.push(h('p', { class: 'headline' }, `${num(p.perfectWords)} of ${num(p.totalWords)} words word perfect`));
-    if (plan.phase !== 'maintenance') body.push(h('p', { class: 'help' }, `Off script by ${formatDay(s.deadline, { long: true })}.`));
+    // What comes next: off script day, then show week.
+    const next = plan.day <= s.deadline ? `Off script by ${formatDay(s.deadline, { long: true })}.` : s.showDay && plan.day < s.showDay ? `Show week from ${formatDay(s.showDay, { long: true })}.` : null;
+    if (next) body.push(h('p', { class: 'help' }, next));
     for (const note of plan.notes) body.push(h('p', { class: 'message' }, note));
 
     if (plan.done) {
