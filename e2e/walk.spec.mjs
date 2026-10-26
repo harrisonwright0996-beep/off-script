@@ -34,6 +34,8 @@ test('audio pack: import, build a walk tape that can play, mark a line, review a
   const saved = await page.evaluate(() => window.offScript.events.filter((e) => e.mode === 'walk').map((e) => e.pass));
   expect(saved.length).toBe(4);
   expect(saved.filter((p) => !p).length).toBe(1);
+  await page.getByRole('button', { name: 'Another 15 minutes' }).click(); // the same length again, in one tap
+  await expect(page.getByRole('button', { name: 'Play' })).toBeVisible();
 });
 
 test('without an audio pack, Walk reads aloud with the screen on', async ({ page }) => {

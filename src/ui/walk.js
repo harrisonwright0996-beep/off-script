@@ -44,6 +44,7 @@ export function clipTexts(manifest, model) {
 
 export function showWalk(ctx) {
   let teardown = () => {};
+  let length = null; // minutes asked for, so another walk the same length is one tap
 
   function page(title, body, footer, back = () => ctx.go('today')) {
     teardown();
@@ -70,6 +71,7 @@ export function showWalk(ctx) {
   }
 
   async function build(minutes) {
+    length = minutes;
     page('Walk', [h('p', { class: 'lead', role: 'status' }, 'Getting the walk ready…')], []);
     await ctx.refreshEvents();
     ctx.refit();
@@ -341,7 +343,8 @@ export function showWalk(ctx) {
           const missed = rows.filter((r) => r.ticked).length;
           announce('Walk saved');
           page('Walk saved', [h('p', { class: 'lead' }, `${plural(rows.length, 'line')}, ${missed ? `${missed} to look at again` : 'all word perfect'}.`)], [
-            button('Another walk', choose, { class: 'btn primary' }),
+            button(`Another ${length} minutes`, () => build(length), { class: 'btn primary' }),
+            button('A different length', choose),
             button('Back to Today', () => ctx.go('today')),
           ]);
         }, { class: 'btn primary' }),
