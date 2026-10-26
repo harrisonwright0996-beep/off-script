@@ -29,13 +29,7 @@ for (const theme of ['cream', 'light', 'dark']) {
     await page.getByRole('button', { name: 'Start sprint' }).click();
     await page.waitForFunction(() => window.offScript.card);
     await check(page, 'card: test', found);
-    await page.getByRole('button', { name: 'Teach me' }).click();
-    await check(page, 'card: front', found);
-    await page.getByRole('button', { name: 'Next', exact: true }).click();
-    await check(page, 'card: back', found);
-    await page.getByRole('button', { name: 'Show words' }).click();
-    await check(page, 'card: back with words', found);
-    await page.getByRole('button', { name: 'Next', exact: true }).click();
+    await page.getByRole('button', { name: 'Try it' }).click();
     await check(page, 'card: who speaks', found);
     await page.getByRole('group', { name: 'Who speaks next?' }).getByRole('button', { name: 'Keeper', exact: true }).click();
     await check(page, 'card: keypad', found);
@@ -44,11 +38,20 @@ for (const theme of ['cream', 'light', 'dark']) {
     await page.keyboard.type('zzzzzzzzzz');
     await expect(page.locator('.result')).toBeVisible();
     await check(page, 'card: result', found);
-    await page.getByRole('button', { name: 'Next', exact: true }).click(); // a miss: first letters again
-    await expect(page.getByText('Say it aloud from the first letters.')).toBeVisible();
+    await page.getByRole('button', { name: 'Next', exact: true }).click(); // a missed try is taught: read it
+    await check(page, 'card: front', found);
     await page.getByRole('button', { name: 'Next', exact: true }).click();
+    await expect(page.getByText('Say it aloud from the first letters, then reveal it.')).toBeVisible();
+    await check(page, 'card: first letters', found);
+    await page.getByRole('button', { name: 'Reveal' }).click();
+    await check(page, 'card: first letters revealed', found);
+    await page.getByRole('button', { name: 'Done' }).click();
+    await expect(page.getByText('It comes back later without the first letters.')).toBeVisible();
+    await check(page, 'card: first letters result', found);
+    await page.getByRole('button', { name: 'Next', exact: true }).click();
+    await page.getByRole('button', { name: 'Try it' }).click();
     await page.getByRole('button', { name: 'Say it instead' }).click();
-    await page.getByRole('group', { name: 'Who speaks next?' }).getByRole('button', { name: 'Cast', exact: true }).click();
+    await page.getByRole('group', { name: 'Who speaks next?' }).getByRole('button', { name: 'Keeper', exact: true }).click();
     await check(page, 'card: say before reveal', found);
     await page.getByRole('button', { name: 'Reveal' }).click();
     await check(page, 'card: say', found);

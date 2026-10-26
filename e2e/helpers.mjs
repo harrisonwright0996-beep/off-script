@@ -34,8 +34,9 @@ export async function importScript(page, url) {
 // The keys for the line on show: one first letter or digit per word.
 export const keysOf = (page) => page.evaluate(() => window.offScript.card.item.tokens.filter((t) => t.k !== null).map((t) => t.k).join(''));
 
-// Answers whatever card is on show, the way he would: teach new lines, choose the right speaker,
-// type the line. miss: type a wrong first key. Returns the card's step.
+// Answers whatever card is on show, the way he would: teach new lines, say first letters cards,
+// choose the right speaker, type the line. miss: type a wrong first key, or tap the first word as
+// missed on a first letters card. Returns the card's step.
 export async function answerCard(page, { miss = false } = {}) {
   await page.waitForFunction(() => window.offScript && window.offScript.card && document.querySelector('h1').textContent === window.offScript.card.label);
   const card = await page.evaluate(() => {
@@ -43,11 +44,17 @@ export async function answerCard(page, { miss = false } = {}) {
     return { key: c.key, step: c.step, label: c.label, speaker: c.item.speaker, ask: !!c.askSpeaker };
   });
   if (card.step === 'test') await page.getByRole('button', { name: 'Teach me' }).click();
-  else if (card.step === 'front' || card.step === 'back') await page.getByRole('button', { name: 'Next', exact: true }).click();
+  else if (card.step === 'front') await page.getByRole('button', { name: 'Next', exact: true }).click();
   else {
-    if (card.ask) await page.getByRole('group', { name: 'Who speaks next?' }).getByRole('button', { name: card.speaker, exact: true }).click();
-    const keys = await keysOf(page);
-    await page.keyboard.type(miss ? (keys[0] === 'z' ? 'x' : 'z') + keys.slice(1) : keys);
+    if (card.step === 'help') {
+      await page.getByRole('button', { name: 'Reveal' }).click();
+      if (miss) await page.getByRole('group', { name: 'Tap any word you missed or changed' }).getByRole('button').first().click();
+      await page.getByRole('button', { name: 'Done' }).click();
+    } else {
+      if (card.ask) await page.getByRole('group', { name: 'Who speaks next?' }).getByRole('button', { name: card.speaker, exact: true }).click();
+      const keys = await keysOf(page);
+      await page.keyboard.type(miss ? (keys[0] === 'z' ? 'x' : 'z') + keys.slice(1) : keys);
+    }
     await expect(page.locator('.result')).toBeVisible();
     await page.getByRole('button', { name: 'Next', exact: true }).click();
   }

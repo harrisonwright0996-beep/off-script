@@ -1,6 +1,7 @@
 // The sprint: one card at a time from the session (session.js), answered on the keypad (Type) or by
-// tapping the words missed (Say). Every answer is saved at once, and so is the sprint, so closing
-// the app loses nothing. Time is a slim bar that only moves when he does something.
+// tapping the words missed (Say); a first letters card is always said. Every answer is saved at once,
+// and so is the sprint, so closing the app loses nothing. Time is a slim bar that only moves when he
+// does something; at time up nothing new comes, only the lines still to finish, then Sprint done.
 import { h, clear, screen, button, announce, focusHeading, num, plural } from './dom.js';
 import { createSession } from '../session.js';
 import { createTypeCheck, sayMisses, makeResult, describeResult } from '../grade.js';
@@ -34,6 +35,13 @@ export function statsLine(st) {
 
 const minus = (a, b) => Object.fromEntries(Object.keys(a).map((k) => [k, a[k] - (b[k] || 0)]));
 
+// After an answer that leaves a line still to finish: what happens to it next.
+function comesBack(rec, pass) {
+  if (!rec.later) return null;
+  if (pass) return 'It comes back later without the first letters.';
+  return { help: 'It comes back later, with the first letters first.', read: 'It comes back later, to read first.' }[rec.need] || 'It comes back later.';
+}
+
 // scope: 'all' or 'tests' (Just 2 minutes). minutes: the sprint length (settings by default).
 // custom: { scene, itemIds } for Run this scene. extra: 'new' or 'runs' to keep going after the plan.
 export async function showSprint(ctx, { scope = 'all', minutes = null, custom = null, extra = null } = {}) {
@@ -66,6 +74,7 @@ export async function showSprint(ctx, { scope = 'all', minutes = null, custom = 
   let finished = false;
 
   const heading = (scene) => ctx.model.scenes[scene].heading;
+  const speakerName = (it) => (it.part > 0 ? `${it.speaker}, continuing` : it.speaker);
 
   const tick = () => {
     const now = Date.now();
@@ -131,18 +140,8 @@ export async function showSprint(ctx, { scope = 'all', minutes = null, custom = 
         [cueBlock(c.cue), h('p', { class: 'speaker' }, c.item.speaker), h('p', { class: 'line' }, tokenView(c.item.tokens)), h('p', { class: 'prompt' }, c.prompt)],
         [button('Next', () => choose('next'), { class: 'btn primary' }), readAloud(c.item.text)].filter(Boolean),
       );
-    } else if (c.step === 'back') {
-      const words = h('p', { class: 'line help', hidden: true }, tokenView(c.item.tokens));
-      const show = button('Show words', () => {
-        words.hidden = !words.hidden;
-        show.setAttribute('aria-pressed', String(!words.hidden));
-      }, { pressed: 'false' });
-      frame(
-        c,
-        [cueBlock(c.cue), h('p', { class: 'speaker' }, c.item.speaker), h('p', { class: 'line' }, firstLettersLine(c.item.tokens)), words, h('p', { class: 'prompt' }, 'Say it aloud from the first letters.')],
-        [button('Next', () => choose('next'), { class: 'btn primary' }), show],
-      );
-    } else floor(c);
+    } else if (c.step === 'help') helpCard(c);
+    else floor(c);
     if (focus) focusHeading(ctx.root);
   }
 
@@ -151,6 +150,48 @@ export async function showSprint(ctx, { scope = 'all', minutes = null, custom = 
     const c = session.choose(action);
     await saveSprint();
     showCard(c);
+  }
+
+  // Say: reveal the line, tap any word missed or changed, then Done with the words tapped.
+  function sayCheck(tokens, answerArea, footBox, prompt, done) {
+    answerArea.append(h('p', { class: 'prompt' }, prompt));
+    clear(footBox).append(
+      button('Reveal', () => {
+        const tapped = new Set();
+        const words = h('div', { class: 'words', role: 'group', 'aria-label': 'Tap any word you missed or changed' });
+        tokens.forEach((t, i) => {
+          if (t.k === null) {
+            words.append(h('span', { class: 'word note-word' }, t.d));
+            return;
+          }
+          const b = button(t.d, () => {
+            if (tapped.has(i)) tapped.delete(i);
+            else tapped.add(i);
+            b.setAttribute('aria-pressed', String(tapped.has(i)));
+          }, { class: 'word', pressed: 'false' });
+          words.append(b);
+        });
+        clear(answerArea).append(h('p', { class: 'prompt' }, 'Tap any word you missed or changed.'), words);
+        let sent = false; // a quick second tap is not a second answer
+        clear(footBox).append(
+          button('Done', () => {
+            if (sent) return;
+            sent = true;
+            done(sayMisses(tokens, tapped));
+          }, { class: 'btn primary' }),
+        );
+        answerArea.focus({ preventScroll: true });
+      }, { class: 'btn primary' }),
+    );
+  }
+
+  // First letters: the speaker and the first letter of every word, said aloud, then checked as in Say.
+  function helpCard(c) {
+    const item = c.item;
+    const answerArea = h('div', { class: 'answer-area', role: 'group', tabindex: '-1', 'aria-label': 'Your line' }, h('p', { class: 'line' }, firstLettersLine(item.tokens)));
+    const footBox = h('div', { class: 'stack-foot' });
+    frame(c, [cueBlock(c.cue), h('p', { class: 'speaker' }, speakerName(item)), answerArea], [footBox]);
+    sayCheck(item.tokens, answerArea, footBox, 'Say it aloud from the first letters, then reveal it.', (misses) => finish(c, makeResult({ misses, mode: 'say' })));
   }
 
   // Floor: from the cue alone. Who's next first (when the speaker changes), then the line.
@@ -199,7 +240,7 @@ export async function showSprint(ctx, { scope = 'all', minutes = null, custom = 
       speakerArea.append(chips);
       footBox.append(h('p', { class: 'help' }, 'Choose who speaks, then say or type the line.'));
     } else {
-      speakerArea.append(h('p', { class: 'speaker' }, item.part > 0 ? `${item.speaker}, continuing` : item.speaker));
+      speakerArea.append(h('p', { class: 'speaker' }, speakerName(item)));
       startAnswer();
     }
 
@@ -224,30 +265,7 @@ export async function showSprint(ctx, { scope = 'all', minutes = null, custom = 
     }
 
     function sayAnswer() {
-      answerArea.append(h('p', { class: 'prompt' }, 'Say it aloud, then reveal it.'));
-      clear(footBox).append(
-        button('Reveal', () => {
-          const tapped = new Set();
-          const words = h('div', { class: 'words', role: 'group', 'aria-label': 'Tap any word you missed or changed' });
-          tokens.forEach((t, i) => {
-            if (t.k === null) {
-              words.append(h('span', { class: 'word note-word' }, t.d));
-              return;
-            }
-            const b = button(t.d, () => {
-              if (tapped.has(i)) tapped.delete(i);
-              else tapped.add(i);
-              b.setAttribute('aria-pressed', String(tapped.has(i)));
-            }, { class: 'word', pressed: 'false' });
-            words.append(b);
-          });
-          clear(answerArea).append(h('p', { class: 'prompt' }, 'Tap any word you missed or changed.'), words);
-          clear(footBox).append(
-            button('Done', () => finish(c, makeResult({ misses: sayMisses(tokens, tapped), speakerWrong, mode: 'say' })), { class: 'btn primary' }),
-          );
-          answerArea.focus({ preventScroll: true });
-        }, { class: 'btn primary' }),
-      );
+      sayCheck(tokens, answerArea, footBox, 'Say it aloud, then reveal it.', (misses) => finish(c, makeResult({ misses, speakerWrong, mode: 'say' })));
     }
   }
 
@@ -258,12 +276,13 @@ export async function showSprint(ctx, { scope = 'all', minutes = null, custom = 
     await ctx.saveAnswer(rec);
     undo.push(rec);
     await saveSprint();
-    const text = describeResult(result, c.item.tokens, c.item.speaker);
-    announce(text);
-    feedback(c, result, text);
+    const text = rec.help && result.pass ? 'Right with the first letters' : describeResult(result, c.item.tokens, c.item.speaker);
+    const note = comesBack(rec, result.pass);
+    announce(note ? `${text}. ${note}` : text);
+    feedback(c, result, text, note);
   }
 
-  function feedback(c, result, text) {
+  function feedback(c, result, text, note) {
     const misses = new Set(result.misses);
     const block = h(
       'p',
@@ -273,7 +292,7 @@ export async function showSprint(ctx, { scope = 'all', minutes = null, custom = 
     );
     frame(
       { ...c, message: null },
-      [cueBlock(c.cue), h('p', { class: 'speaker' }, c.item.speaker), h('p', { class: 'line' }, tokenView(c.item.tokens, c.item.tokens.length, misses)), block],
+      [cueBlock(c.cue), h('p', { class: 'speaker' }, c.item.speaker), h('p', { class: 'line' }, tokenView(c.item.tokens, c.item.tokens.length, misses)), block, note ? h('p', { class: 'help' }, note) : null],
       [button('Next', next, { class: 'btn primary' })],
     );
     ctx.root.querySelector('footer .btn').focus({ preventScroll: true });
@@ -291,14 +310,20 @@ export async function showSprint(ctx, { scope = 'all', minutes = null, custom = 
     showCard(c);
   }
 
+  // Shows the card `pick` gives. Once time is up nothing new comes: the lines the sprint still owes,
+  // then Sprint done.
+  function carryOn(pick) {
+    if (timeUp()) session.close();
+    const c = pick();
+    if (!c) return session.closing ? timeIsUp() : planDone();
+    saveSprint();
+    showCard(c);
+  }
+
   function next() {
     quiet();
     tick();
-    if (timeUp() && session.boundary) return timeIsUp();
-    const c = session.advance();
-    if (!c) return planDone();
-    saveSprint();
-    showCard(c);
+    carryOn(() => session.advance());
   }
 
   async function stop() {
@@ -318,6 +343,7 @@ export async function showSprint(ctx, { scope = 'all', minutes = null, custom = 
 
   function timeIsUp() {
     finished = true;
+    session.finish();
     saveSprint();
     const st = done();
     if (short) {
@@ -362,12 +388,7 @@ export async function showSprint(ctx, { scope = 'all', minutes = null, custom = 
         button('Stop for now', () => ctx.go('today')),
       ]);
     }
-    const keepGoing = (what) => {
-      const c = session.keepGoing(what);
-      if (!c) return planDone();
-      saveSprint();
-      showCard(c);
-    };
+    const keepGoing = (what) => carryOn(() => session.keepGoing(what));
     const footer = [
       plan.ahead.length ? button('Head start on tomorrow', () => keepGoing('new'), { class: 'btn primary' }) : null,
       plan.extraRuns.length ? button('An extra run', () => keepGoing('runs'), { class: plan.ahead.length ? 'btn' : 'btn primary' }) : null,
@@ -384,9 +405,7 @@ export async function showSprint(ctx, { scope = 'all', minutes = null, custom = 
   };
   document.addEventListener('visibilitychange', onVisibility);
 
-  const first = extra ? session.keepGoing(extra) : session.advance();
-  if (first) showCard(first);
-  else planDone();
+  carryOn(() => (extra ? session.keepGoing(extra) : session.advance()));
 
   return () => {
     quiet();

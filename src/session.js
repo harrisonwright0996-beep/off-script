@@ -320,7 +320,8 @@ export function createSession({ model, index, getPlan, getState, settings, scope
     },
 
     // For help and floor cards. result: { pass, misses: [token indices], speakerWrong, mode }.
-    // Returns the event and new state to save, the snapshot for undo, and what the line needs next.
+    // Returns the event and new state to save, the snapshot for undo, what the line needs next and
+    // whether it comes back later for it.
     answer(result) {
       const snapshot = structuredClone(S);
       const t = S.task;
@@ -380,7 +381,9 @@ export function createSession({ model, index, getPlan, getState, settings, scope
         if (t.pos >= t.ids.length) t.done = true;
       }
       card = null;
-      return { event, state, snapshot, need: line.need, help };
+      // Whether the line comes back later in the sprint (a missed try is taught there and then instead).
+      const later = line.need !== 'done' && (t.kind === 'seq' || !!t.done);
+      return { event, state, snapshot, need: line.need, help, later };
     },
 
     // Time is up: nothing new from here. A run under way stops; what it showed comes back on its own.

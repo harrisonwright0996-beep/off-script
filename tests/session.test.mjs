@@ -62,7 +62,7 @@ test('a new line taught: read it, say it from the first letters, then on to the 
   const rec = answer(app, s, true);
   assert.equal(rec.event.help, true);
   assert.deepEqual([rec.state.status, rec.state.passes, rec.state.helped, rec.state.stability], ['learning', 0, 1, null], 'right with the first letters counts for nothing yet');
-  assert.deepEqual([rec.need, rec.help], ['clean', true]);
+  assert.deepEqual([rec.need, rec.help, rec.later], ['clean', true, true], 'it comes back later, without the first letters');
   const c = s.advance();
   assert.deepEqual([c.item.id, c.step], [second, 'test']);
   assert.deepEqual(s.stats, { answered: 0, perfect: 0, learnedItems: 0, learnedWords: 0 }, 'only goes from the cue alone are counted');
@@ -80,6 +80,7 @@ test('Try it: right needs no first letters; missed, the line is read, then said 
   assert.deepEqual([c.item.id, c.step], [second, 'test']);
   s.choose('try');
   rec = answer(app, s, false);
+  assert.deepEqual([rec.need, rec.later], ['read', false], 'taught there and then, not later');
   c = s.advance();
   assert.deepEqual([c.item.id, c.step], [second, 'front']);
   assert.equal(s.choose('next').step, 'help');
