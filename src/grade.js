@@ -87,3 +87,16 @@ export function describeResult(result, tokens, speaker) {
   }
   return parts.join('. ');
 }
+
+// Trouble words: of the words missed now, those missed in the same line before (events from Release 7
+// on say which words were missed). Token indices.
+export function repeatMisses(events, id, misses) {
+  const before = new Set();
+  for (const e of events) if (e.id === id && e.missed) for (const i of e.missed) before.add(i);
+  return misses.filter((i) => before.has(i));
+}
+
+export function troubleNote(tokens, indices) {
+  if (!indices.length) return null;
+  return `Missed here before as well: ${indices.slice(0, 5).map((i) => bare(tokens[i].d)).join(', ')}.`;
+}

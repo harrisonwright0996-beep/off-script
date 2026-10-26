@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { dayKey, addDays, daysBetween, weekday, formatDay, dayEnd } from '../src/dates.js';
 import { newState, applyResult, applyHelp, needsTeaching, category, isSecure, isWordPerfect } from '../src/state.js';
-import { createTypeCheck, sayMisses, makeResult, describeResult, neighbours } from '../src/grade.js';
+import { createTypeCheck, sayMisses, makeResult, describeResult, neighbours, repeatMisses, troubleNote } from '../src/grade.js';
 import { tokenize } from '../src/tokens.js';
 
 test('the day starts at 03:00 local time', () => {
@@ -112,6 +112,22 @@ test('type check: a wrong key next to the right one may be a slip of the finger;
   assert.deepEqual([neighbours('a', 'q'), neighbours('a', 'w'), neighbours('a', 'e'), neighbours('z', 's'), neighbours('z', 'd'), neighbours('1', 'q'), neighbours('m', 'm')], [true, true, false, true, false, true, false]);
   const r = makeResult({ misses: [], mode: 'type', slip: true });
   assert.deepEqual([r.pass, r.slip], [true, true]);
+});
+
+test('trouble words: the words missed now that were missed in the same line before', () => {
+  const tokens = tokenize('I said I would, and I will.');
+  const events = [
+    { id: 'a', missed: [1, 4] },
+    { id: 'a', missed: [4] },
+    { id: 'b', missed: [2] },
+    { id: 'a', pass: true },
+  ];
+  assert.deepEqual(repeatMisses(events, 'a', [2, 4]), [4]);
+  assert.deepEqual(repeatMisses(events, 'a', [2]), []);
+  assert.deepEqual(repeatMisses([], 'a', [4]), []);
+  assert.equal(troubleNote(tokens, [4]), 'Missed here before as well: and.');
+  assert.equal(troubleNote(tokens, [1, 4]), 'Missed here before as well: said, and.');
+  assert.equal(troubleNote(tokens, []), null);
 });
 
 test('say mode: tapped words are misses; directions cannot be tapped', () => {

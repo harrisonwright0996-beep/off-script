@@ -4,7 +4,7 @@
 // does something; at time up nothing new comes, only the lines still to finish, then Sprint done.
 import { h, clear, screen, button, announce, focusHeading, num, plural } from './dom.js';
 import { createSession, linesLeft } from '../session.js';
-import { createTypeCheck, sayMisses, makeResult, describeResult } from '../grade.js';
+import { createTypeCheck, sayMisses, makeResult, describeResult, repeatMisses, troubleNote } from '../grade.js';
 import { firstLettersLine } from '../tokens.js';
 import { canSpeak, speak, stopSpeaking } from '../tts.js';
 import { untilText } from '../plan.js';
@@ -328,8 +328,10 @@ export async function showSprint(ctx, { scope = 'all', minutes = null, custom = 
     await saveSprint();
     const text = rec.help && result.pass ? 'Right with the first letters' : result.slip ? 'Counted right: a slip of the finger' : describeResult(result, c.item.tokens, c.item.speaker);
     const note = comesBack(rec);
-    announce(note ? `${text}. ${note}` : text);
-    feedback(c, result, text, note, slipped && !result.pass);
+    const earlier = ctx.events.filter((e) => e !== rec.event);
+    const trouble = result.pass ? null : troubleNote(c.item.tokens, repeatMisses(earlier, c.item.id, result.misses));
+    announce([`${text}.`, trouble, note].filter(Boolean).join(' '));
+    feedback(c, result, text, note, slipped && !result.pass, trouble);
   }
 
   // He says the wrong keys were only slips of the finger: the answer is taken back and saved as right.
@@ -342,7 +344,7 @@ export async function showSprint(ctx, { scope = 'all', minutes = null, custom = 
     await finish(c, makeResult({ misses: [], mode: result.mode, ms: result.ms, firstMs: result.firstMs, slip: true }));
   }
 
-  function feedback(c, result, text, note, slipped = false) {
+  function feedback(c, result, text, note, slipped = false, trouble = null) {
     const misses = new Set(result.misses);
     const block = h(
       'p',
@@ -352,7 +354,14 @@ export async function showSprint(ctx, { scope = 'all', minutes = null, custom = 
     );
     frame(
       { ...c, message: null },
-      [cueBlock(c.cue), h('p', { class: 'speaker' }, c.item.speaker), h('p', { class: 'line' }, tokenView(c.item.tokens, c.item.tokens.length, misses)), block, note ? h('p', { class: 'help' }, note) : null],
+      [
+        cueBlock(c.cue),
+        h('p', { class: 'speaker' }, c.item.speaker),
+        h('p', { class: 'line' }, tokenView(c.item.tokens, c.item.tokens.length, misses)),
+        block,
+        trouble ? h('p', { class: 'help trouble' }, trouble) : null,
+        note ? h('p', { class: 'help' }, note) : null,
+      ],
       [button('Next', next, { class: 'btn primary' }), slipped ? button('A slip of the finger? Count it right', () => countRight(c, result)) : null].filter(Boolean),
     );
     ctx.root.querySelector('footer .btn').focus({ preventScroll: true });

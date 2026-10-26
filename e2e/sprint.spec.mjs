@@ -228,9 +228,13 @@ test('a slip of the finger: a wrong key touching the right one can be counted ri
   await page.getByRole('button', { name: 'Undo last answer' }).click();
   await expect(page.getByText('Who speaks next?')).toBeVisible();
   expect(await page.evaluate(() => window.offScript.events.length)).toBe(0);
-  // A wrong key nowhere near the right one is a miss, with nothing to count it right.
+  // A wrong key nowhere near the right one is a miss, with nothing to count it right. That word was
+  // missed in this line once before (as if on an earlier day), so the result says so.
+  await page.evaluate(() => window.offScript.events.push({ time: Date.now() - 86400000, day: '2026-10-25', id: window.offScript.card.item.id, pass: false, mode: 'type', misses: 1, missed: [0] }));
   await page.getByRole('group', { name: 'Who speaks next?' }).getByRole('button', { name: 'Cast', exact: true }).click();
   await page.keyboard.type('p' + keys.slice(1));
   await expect(page.locator('.result.misses')).toHaveText(/One miss: We/);
   await expect(page.getByRole('button', { name: /slip of the finger/ })).toHaveCount(0);
+  await expect(page.getByText('Missed here before as well: We.')).toBeVisible();
+  await shot(page, 'card-result-trouble');
 });
