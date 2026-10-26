@@ -1,7 +1,7 @@
 // Accessibility: axe on every screen, in every theme. No serious or critical problems allowed.
 import { test, expect } from '@playwright/test';
 import { createRequire } from 'node:module';
-import { importScript, answerCard } from './helpers.mjs';
+import { importScript, answerCard, keysOf } from './helpers.mjs';
 
 const AXE = createRequire(import.meta.url).resolve('axe-core/axe.min.js');
 test.use({ bypassCSP: true }); // only so axe itself can be added to the page
@@ -108,6 +108,30 @@ for (const theme of ['cream', 'light', 'dark']) {
     await page.evaluate(() => window.offScript.go('setup', { reimport: true }));
     await check(page, 'import again', found);
 
+    for (const f of found) console.log(`${theme} | ${f.where} | ${f.impact} | ${f.id}: ${f.help} | ${f.nodes.join(', ')}`);
+    expect(found.filter((f) => f.impact === 'serious' || f.impact === 'critical')).toEqual([]);
+  });
+}
+
+for (const theme of ['cream', 'light', 'dark']) {
+  test(`a slip of the finger and a word missed before, in the ${theme} theme`, async ({ page }) => {
+    const found = [];
+    await importScript(page);
+    await page.evaluate((t) => window.offScript.saveSettings({ theme: t }), theme);
+    await page.evaluate(() => window.offScript.go('today'));
+    await page.getByRole('button', { name: 'Start sprint' }).click();
+    await page.getByRole('button', { name: 'Try it' }).click();
+    await page.getByRole('group', { name: 'Who speaks next?' }).getByRole('button', { name: 'Cast', exact: true }).click();
+    const keys = await keysOf(page);
+    // Its first word was missed in this line once before, as if on an earlier day.
+    await page.evaluate(() => window.offScript.events.push({ time: Date.now() - 86400000, day: '2026-10-25', id: window.offScript.card.item.id, pass: false, mode: 'type', misses: 1, missed: [0] }));
+    await page.keyboard.type('e' + keys.slice(1)); // e touches w
+    await expect(page.getByRole('button', { name: 'A slip of the finger? Count it right' })).toBeVisible();
+    await expect(page.getByText('Missed here before as well: We.')).toBeVisible();
+    await check(page, 'card: a slip, missed before', found);
+    await page.getByRole('button', { name: 'A slip of the finger? Count it right' }).click();
+    await expect(page.locator('.result.perfect')).toHaveText(/Counted right: a slip of the finger/);
+    await check(page, 'card: counted right', found);
     for (const f of found) console.log(`${theme} | ${f.where} | ${f.impact} | ${f.id}: ${f.help} | ${f.nodes.join(', ')}`);
     expect(found.filter((f) => f.impact === 'serious' || f.impact === 'critical')).toEqual([]);
   });
