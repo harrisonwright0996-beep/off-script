@@ -73,6 +73,15 @@ for (const theme of ['cream', 'light', 'dark']) {
 
     await page.getByRole('button', { name: 'Settings' }).click();
     await check(page, 'settings', found);
+    await page.getByRole('button', { name: 'Start again from 0%' }).click();
+    await check(page, 'start again', found);
+    await page.getByRole('button', { name: 'Keep my progress' }).click();
+    await page.evaluate(() => window.offScript.go('again', { scene: 0 }));
+    await check(page, 'start this scene again', found);
+    await page.getByRole('button', { name: 'Keep its progress' }).click();
+    await page.getByRole('button', { name: 'Back', exact: true }).click();
+    await page.getByRole('button', { name: 'Back', exact: true }).click();
+    await page.getByRole('button', { name: 'Settings' }).click();
     await page.getByRole('button', { name: 'Remove everything' }).click();
     await check(page, 'remove everything', found);
     await page.getByRole('button', { name: 'Keep everything' }).click();

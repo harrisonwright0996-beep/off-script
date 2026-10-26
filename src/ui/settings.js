@@ -39,6 +39,30 @@ const when = (ms) => {
   return `${formatDay(dayKey(d))} at ${d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}`;
 };
 
+// Saves a backup of his progress: to Files by the share sheet where there is one, else a download.
+export async function saveBackup(ctx) {
+  const events = await ctx.store.allEvents();
+  const data = makeBackup({ model: ctx.model, states: ctx.states.values(), events, settings: ctx.settings });
+  const name = `Off Script progress ${formatDay(dayKey())}.json`;
+  const file = new File([JSON.stringify(data)], name, { type: 'application/json' });
+  if (navigator.canShare && navigator.canShare({ files: [file] })) {
+    try {
+      await navigator.share({ files: [file], title: 'Off Script progress' });
+      announce('Backup ready');
+      return;
+    } catch (err) {
+      if (err && err.name === 'AbortError') return;
+    }
+  }
+  const url = URL.createObjectURL(file);
+  const a = h('a', { href: url, download: name, class: 'visually-hidden' }, 'Download');
+  document.body.append(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 10000);
+  announce('Backup saved');
+}
+
 export function showSettings(ctx) {
   const s = ctx.settings;
   const save = async (patch) => {
@@ -129,29 +153,6 @@ export function showSettings(ctx) {
   }
 
   // Progress.
-  async function backup() {
-    const events = await ctx.store.allEvents();
-    const data = makeBackup({ model: ctx.model, states: ctx.states.values(), events, settings: ctx.settings });
-    const name = `Off Script progress ${formatDay(dayKey())}.json`;
-    const file = new File([JSON.stringify(data)], name, { type: 'application/json' });
-    if (navigator.canShare && navigator.canShare({ files: [file] })) {
-      try {
-        await navigator.share({ files: [file], title: 'Off Script progress' });
-        announce('Backup ready');
-        return;
-      } catch (err) {
-        if (err && err.name === 'AbortError') return;
-      }
-    }
-    const url = URL.createObjectURL(file);
-    const a = h('a', { href: url, download: name, class: 'visually-hidden' }, 'Download');
-    document.body.append(a);
-    a.click();
-    a.remove();
-    setTimeout(() => URL.revokeObjectURL(url), 10000);
-    announce('Backup saved');
-  }
-
   function page(title, body, footer) {
     clear(ctx.root).append(screen({ title, back: () => ctx.go('settings'), body, footer }));
     focusHeading(ctx.root);
@@ -182,6 +183,7 @@ export function showSettings(ctx) {
           await ctx.store.clearEvents();
           await ctx.store.putEvents(b.events);
           await ctx.store.del('sprint');
+          await ctx.store.del('practice');
           if (b.settings) await ctx.saveSettings(withDefaults(b.settings));
           ctx.states = new Map(b.states.map((st) => [st.id, st]));
           ctx.eventsFrom = null;
@@ -270,7 +272,14 @@ export function showSettings(ctx) {
           'div',
           { class: 'group' },
           h('p', { class: 'help' }, 'A backup holds your results, never the script’s words. Save it to Files.'),
-          h('div', { class: 'stack' }, button('Back up progress', backup), button('Restore a backup', restore), button('Remove everything', removeAll)),
+          h(
+            'div',
+            { class: 'stack' },
+            button('Back up progress', () => saveBackup(ctx)),
+            button('Restore a backup', restore),
+            ctx.states.size ? button('Start again from 0%', () => ctx.go('again')) : null,
+            button('Remove everything', removeAll),
+          ),
         ),
         h('p', { class: 'help' }, 'Off Script keeps everything on this phone. Nothing is sent anywhere.'),
       ],

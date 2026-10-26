@@ -15,8 +15,9 @@ import { showScenes, showReader } from './ui/scenes.js';
 import { showSettings } from './ui/settings.js';
 import { showWalk } from './ui/walk.js';
 import { showChoose } from './ui/choose.js';
+import { showStartAgain } from './ui/again.js';
 
-const SCREENS = { install: showInstall, setup: showSetup, today: showToday, sprint: showSprint, scenes: showScenes, reader: showReader, settings: showSettings, walk: showWalk, choose: showChoose };
+const SCREENS = { install: showInstall, setup: showSetup, today: showToday, sprint: showSprint, scenes: showScenes, reader: showReader, settings: showSettings, walk: showWalk, choose: showChoose, again: showStartAgain };
 const EVENT_DAYS = 9; // the plan looks back this far
 
 export function applyLook(s) {
@@ -83,6 +84,15 @@ async function boot() {
       await store.undo(rec.event.key, rec.event.prev);
       ctx.states.set(rec.event.id, rec.event.prev);
       ctx.events = ctx.events.filter((e) => e !== rec.event);
+    },
+
+    // Back to not started: these lines (every line when ids is null) lose their progress and answers.
+    async startAgain(ids = null) {
+      await store.clearProgress(ids);
+      const gone = ids && new Set(ids);
+      ctx.states = gone ? new Map([...ctx.states].filter(([id]) => !gone.has(id))) : new Map();
+      ctx.events = gone ? ctx.events.filter((e) => !gone.has(e.id)) : [];
+      ctx.refit();
     },
 
     async saveSettings(patch) {

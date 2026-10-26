@@ -108,6 +108,14 @@ export function showReader(ctx, { scene: index }) {
       body: [
         h('p', { class: 'help' }, scene.words ? `${plural(scene.reader.filter((r) => r.t === 'speech').length, 'speech', 'speeches')}, ${num(scene.words)} words.` : 'On screen text only.'),
         h('div', { class: 'reader' }, all.map((p) => p.el)),
+        learned
+          ? h(
+              'div',
+              { class: 'stack' },
+              h('p', { class: 'help' }, 'Its lines go back to not started, to learn them again from the beginning.'),
+              button('Start this scene again', () => ctx.go('again', { scene: index })),
+            )
+          : null,
       ],
       footer,
     }),

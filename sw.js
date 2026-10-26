@@ -31,6 +31,7 @@ const FILES = [
   'src/tape.js',
   'src/tokens.js',
   'src/tts.js',
+  'src/ui/again.js',
   'src/ui/choose.js',
   'src/ui/dom.js',
   'src/ui/install.js',

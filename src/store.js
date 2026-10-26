@@ -90,6 +90,28 @@ export async function openStore(name = DB) {
     },
     clearEvents: () => one('events', 'readwrite', (s) => s.clear()),
 
+    // Starting again: the states and answers of these lines (every line when ids is null) go, with
+    // any sprint or practice part way. The script, the audio pack and the settings stay.
+    async clearProgress(ids = null) {
+      const tx = db.transaction(['items', 'events', 'kv'], 'readwrite');
+      if (ids === null) {
+        tx.objectStore('items').clear();
+        tx.objectStore('events').clear();
+      } else {
+        const gone = new Set(ids);
+        for (const id of gone) tx.objectStore('items').delete(id);
+        const cursor = tx.objectStore('events').openCursor();
+        cursor.onsuccess = () => {
+          const c = cursor.result;
+          if (!c) return;
+          if (gone.has(c.value.id)) c.delete();
+          c.continue();
+        };
+      }
+      for (const key of ['sprint', 'practice']) tx.objectStore('kv').delete(key);
+      await done(tx);
+    },
+
     // Audio clips, saved in batches so a big pack never needs one huge transaction.
     async putClips(clips) {
       const entries = [...clips];

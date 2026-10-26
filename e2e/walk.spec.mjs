@@ -1,17 +1,7 @@
 import { test, expect } from '@playwright/test';
-import { importScript, chooseFile } from './helpers.mjs';
-import { fixtureModel } from '../tests/helpers.mjs';
-import { buildFixturePack } from '../tests/fixtures/audio-pack.mjs';
+import { importScript, importPack } from './helpers.mjs';
 
 const shot = (page, name) => page.screenshot({ path: `shots/${test.info().project.name}-${name}.png` });
-
-async function importPack(page) {
-  await page.getByRole('button', { name: 'Settings' }).click();
-  const zip = Buffer.from(buildFixturePack(fixtureModel().model));
-  await chooseFile(page, 'Import audio pack', { name: 'Off Script audio pack 26 October.zip', mimeType: 'application/zip', buffer: zip });
-  await expect(page.getByText('Audio pack: every line has audio', { exact: false })).toBeVisible();
-  await page.getByRole('button', { name: 'Back', exact: true }).click();
-}
 
 test('audio pack: import, build a walk tape that can play, mark a line, review and save', async ({ page }) => {
   await importScript(page);

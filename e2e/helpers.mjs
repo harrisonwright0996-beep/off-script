@@ -1,6 +1,8 @@
 // Shared steps for the browser tests. Only the invented play is ever loaded.
 import { expect } from '@playwright/test';
 import { buildFixtureDocx } from '../tests/fixtures/night-ferry.mjs';
+import { fixtureModel } from '../tests/helpers.mjs';
+import { buildFixturePack } from '../tests/fixtures/audio-pack.mjs';
 
 export const DOCX = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
 
@@ -29,6 +31,15 @@ export async function importScript(page, url) {
   await expect(page.getByRole('heading', { name: 'Your dates' })).toBeVisible();
   await page.getByRole('button', { name: 'Looks right' }).click();
   await expect(page.getByRole('heading', { name: 'Today' })).toBeVisible();
+}
+
+// From Today: imports the invented play's audio pack in Settings, then back to Today.
+export async function importPack(page) {
+  await page.getByRole('button', { name: 'Settings' }).click();
+  const zip = Buffer.from(buildFixturePack(fixtureModel().model));
+  await chooseFile(page, 'Import audio pack', { name: 'Off Script audio pack 26 October.zip', mimeType: 'application/zip', buffer: zip });
+  await expect(page.getByText('Audio pack: every line has audio', { exact: false })).toBeVisible();
+  await page.getByRole('button', { name: 'Back', exact: true }).click();
 }
 
 // The keys for the line on show: one first letter or digit per word.
