@@ -2,6 +2,18 @@
 // shows the right word at once and marks it missed, so there is never any letter guessing.
 // Say mode: after saying the line aloud he taps the words he missed or changed.
 
+// The Type keypad's rows, each centred under the one above, keys of one width.
+export const KEY_ROWS = ['1234567890', 'qwertyuiop', 'asdfghjkl', 'zxcvbnm?'];
+const KEY_AT = new Map(KEY_ROWS.flatMap((row, y) => [...row].map((k, i) => [k, { x: i + (10 - row.length) / 2, y }])));
+
+// Two different keys that touch, side by side or diagonally: a slip of the finger from one to the
+// other is easy.
+export function neighbours(a, b) {
+  const p = KEY_AT.get(a);
+  const q = KEY_AT.get(b);
+  return !!p && !!q && a !== b && Math.abs(p.y - q.y) <= 1 && Math.abs(p.x - q.x) <= 1;
+}
+
 export function createTypeCheck(tokens) {
   const keyed = [];
   tokens.forEach((t, i) => {
@@ -9,10 +21,12 @@ export function createTypeCheck(tokens) {
   });
   let pos = 0;
   const misses = [];
+  const slips = []; // missed with a key touching the right one: perhaps a slip of the finger
 
-  const step = (correct) => {
+  const step = (correct, key = null) => {
     const index = keyed[pos];
     if (!correct) misses.push(index);
+    if (!correct && key !== null && neighbours(key, tokens[index].k)) slips.push(index);
     pos += 1;
     return { index, correct, done: pos >= keyed.length };
   };
@@ -28,9 +42,13 @@ export function createTypeCheck(tokens) {
     get misses() {
       return [...misses];
     },
+    get slips() {
+      return [...slips];
+    },
     press(key) {
       if (pos >= keyed.length) return null;
-      return step(String(key).toLowerCase() === tokens[keyed[pos]].k);
+      const k = String(key).toLowerCase();
+      return step(k === tokens[keyed[pos]].k, k);
     },
     reveal() {
       if (pos >= keyed.length) return null;
@@ -44,11 +62,12 @@ export function sayMisses(tokens, tapped) {
 }
 
 // ms: from the answer starting (the keypad or Reveal on show) to the last key or Reveal. firstMs: to
-// the first key (Type).
-export function makeResult({ misses, speakerWrong = false, mode, ms = null, firstMs = null }) {
+// the first key (Type). slip: counted right by him after a slip of the finger.
+export function makeResult({ misses, speakerWrong = false, mode, ms = null, firstMs = null, slip = false }) {
   const result = { pass: misses.length === 0 && !speakerWrong, misses, speakerWrong, mode };
   if (ms != null) result.ms = ms;
   if (firstMs != null) result.firstMs = firstMs;
+  if (slip) result.slip = true;
   return result;
 }
 

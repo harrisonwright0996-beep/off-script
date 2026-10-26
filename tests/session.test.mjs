@@ -438,3 +438,13 @@ test('an answer saves which words were missed and how long it took, for trouble 
   assert.equal('missed' in right.event, false);
   assert.equal('ms' in right.event, false);
 });
+
+test('a slip of the finger counted right is saved as right, and marked as a slip', () => {
+  const app = fakeApp();
+  const s = start(app);
+  s.advance();
+  s.choose('try');
+  const rec = s.answer(makeResult({ misses: [], mode: 'type', slip: true }));
+  assert.equal(rec.event.pass, true);
+  assert.equal(rec.event.slip, true);
+});

@@ -66,6 +66,7 @@ test('a miss shows the right word and comes back through first letters; undo put
   await page.keyboard.type('?' + keys.slice(1));
   await expect(page.locator('.result.misses')).toHaveText(/It was Cast\. One miss: We/);
   await expect(page.locator('.tok.miss')).toHaveCount(1);
+  await expect(page.getByRole('button', { name: /slip of the finger/ })).toHaveCount(0); // ? is never a slip
   // Saved with it: which word was missed and how long the line took, for trouble words.
   const last = await page.evaluate(() => window.offScript.events.at(-1));
   expect(last.missed).toEqual([0]);
@@ -211,4 +212,27 @@ test('on a short screen, a long cue and line: the line being typed stays above t
   expect(result).toBeLessThanOrEqual(0);
   await page.getByRole('button', { name: 'Next', exact: true }).click();
   expect(await page.evaluate(() => window.scrollY)).toBe(0); // the next card starts at its cue
+});
+
+test('a slip of the finger: a wrong key touching the right one can be counted right, and undone', async ({ page }) => {
+  await importScript(page);
+  await page.getByRole('button', { name: 'Start sprint' }).click();
+  await page.getByRole('button', { name: 'Try it' }).click();
+  await page.getByRole('group', { name: 'Who speaks next?' }).getByRole('button', { name: 'Cast', exact: true }).click();
+  const keys = await keysOf(page);
+  expect(keys[0]).toBe('w');
+  await page.keyboard.type('e' + keys.slice(1)); // e touches w
+  await expect(page.locator('.result.misses')).toHaveText(/One miss: We/);
+  await shot(page, 'card-result-slip');
+  await page.getByRole('button', { name: 'A slip of the finger? Count it right' }).click();
+  await expect(page.locator('.result.perfect')).toHaveText(/Counted right: a slip of the finger/);
+  expect(await page.evaluate(() => window.offScript.events.map((e) => [e.pass, !!e.slip]))).toEqual([[true, true]]);
+  await page.getByRole('button', { name: 'Undo last answer' }).click();
+  await expect(page.getByText('Who speaks next?')).toBeVisible();
+  expect(await page.evaluate(() => window.offScript.events.length)).toBe(0);
+  // A wrong key nowhere near the right one is a miss, with nothing to count it right.
+  await page.getByRole('group', { name: 'Who speaks next?' }).getByRole('button', { name: 'Cast', exact: true }).click();
+  await page.keyboard.type('p' + keys.slice(1));
+  await expect(page.locator('.result.misses')).toHaveText(/One miss: We/);
+  await expect(page.getByRole('button', { name: /slip of the finger/ })).toHaveCount(0);
 });

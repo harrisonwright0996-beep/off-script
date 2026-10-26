@@ -287,7 +287,8 @@ export async function showSprint(ctx, { scope = 'all', minutes = null, custom = 
     function typeAnswer() {
       const check = createTypeCheck(tokens);
       const line = h('p', { class: 'line answer' });
-      const hint = h('p', { class: 'help' }, 'Tap the first letter of each word. ? shows the next word.');
+      // Said or mouthed, a line is remembered better than in the head alone (the production effect).
+      const hint = h('p', { class: 'help' }, 'Say or mouth each word as you tap its first letter. ? shows the next word.');
       const draw = () => clear(line).append(...tokenView(tokens, check.shownUpTo, new Set(check.misses)));
       draw();
       answerArea.append(line, hint);
@@ -300,7 +301,11 @@ export async function showSprint(ctx, { scope = 'all', minutes = null, custom = 
         draw();
         keepInView(line);
         announce(`${r.correct ? '' : 'Missed: '}${tokens[r.index].d}`);
-        if (r.done) finish(c, makeResult({ misses: check.misses, speakerWrong, mode: 'type', ms: timed(answerStart), firstMs }));
+        if (!r.done) return;
+        // One or two wrong keys, each touching the right one, and nothing else wrong: he may say it
+        // was only a slip of the finger.
+        const slipped = !speakerWrong && check.misses.length <= 2 && check.misses.every((i) => check.slips.includes(i));
+        finish(c, makeResult({ misses: check.misses, speakerWrong, mode: 'type', ms: timed(answerStart), firstMs }), { slipped });
       });
       removeKeys = pad.remove;
       clear(footBox).append(pad.el);
@@ -313,20 +318,30 @@ export async function showSprint(ctx, { scope = 'all', minutes = null, custom = 
     }
   }
 
-  async function finish(c, result) {
+  async function finish(c, result, { slipped = false } = {}) {
     quiet();
     tick();
     const rec = session.answer(result);
     await ctx.saveAnswer(rec);
     undo.push(rec);
     await saveSprint();
-    const text = rec.help && result.pass ? 'Right with the first letters' : describeResult(result, c.item.tokens, c.item.speaker);
+    const text = rec.help && result.pass ? 'Right with the first letters' : result.slip ? 'Counted right: a slip of the finger' : describeResult(result, c.item.tokens, c.item.speaker);
     const note = comesBack(rec);
     announce(note ? `${text}. ${note}` : text);
-    feedback(c, result, text, note);
+    feedback(c, result, text, note, slipped && !result.pass);
   }
 
-  function feedback(c, result, text, note) {
+  // He says the wrong keys were only slips of the finger: the answer is taken back and saved as right.
+  async function countRight(c, result) {
+    const rec = undo.pop();
+    if (!rec) return;
+    quiet();
+    await ctx.undoAnswer(rec);
+    session.restore(rec.snapshot);
+    await finish(c, makeResult({ misses: [], mode: result.mode, ms: result.ms, firstMs: result.firstMs, slip: true }));
+  }
+
+  function feedback(c, result, text, note, slipped = false) {
     const misses = new Set(result.misses);
     const block = h(
       'p',
@@ -337,7 +352,7 @@ export async function showSprint(ctx, { scope = 'all', minutes = null, custom = 
     frame(
       { ...c, message: null },
       [cueBlock(c.cue), h('p', { class: 'speaker' }, c.item.speaker), h('p', { class: 'line' }, tokenView(c.item.tokens, c.item.tokens.length, misses)), block, note ? h('p', { class: 'help' }, note) : null],
-      [button('Next', next, { class: 'btn primary' })],
+      [button('Next', next, { class: 'btn primary' }), slipped ? button('A slip of the finger? Count it right', () => countRight(c, result)) : null].filter(Boolean),
     );
     ctx.root.querySelector('footer .btn').focus({ preventScroll: true });
     keepInView(block);

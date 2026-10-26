@@ -2,8 +2,7 @@
 // and ?. One tap per word: its first letter or digit. ? shows the next word, which counts as a miss.
 // A hardware keyboard works too.
 import { h } from './dom.js';
-
-const ROWS = ['1234567890', 'qwertyuiop', 'asdfghjkl', 'zxcvbnm?'];
+import { KEY_ROWS as ROWS } from '../grade.js';
 
 export function keypad(onKey) {
   const el = h(

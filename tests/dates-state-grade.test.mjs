@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { dayKey, addDays, daysBetween, weekday, formatDay, dayEnd } from '../src/dates.js';
 import { newState, applyResult, applyHelp, needsTeaching, category, isSecure, isWordPerfect } from '../src/state.js';
-import { createTypeCheck, sayMisses, makeResult, describeResult } from '../src/grade.js';
+import { createTypeCheck, sayMisses, makeResult, describeResult, neighbours } from '../src/grade.js';
 import { tokenize } from '../src/tokens.js';
 
 test('the day starts at 03:00 local time', () => {
@@ -97,6 +97,21 @@ test('type check: one key per word, wrong keys and ? mark misses and move on', (
   assert.deepEqual(c.misses, [2, 3]);
   assert.equal(c.shownUpTo, tokens.length);
   assert.equal(makeResult({ misses: c.misses, mode: 'type' }).pass, false);
+});
+
+test('type check: a wrong key next to the right one may be a slip of the finger; ? never is', () => {
+  const tokens = tokenize('On my way, wait, what?');
+  const c = createTypeCheck(tokens);
+  c.press('o');
+  c.press('n'); // my: n is next to m
+  c.reveal(); // way
+  c.press('q'); // wait: q is next to w
+  c.press('p'); // what: p is nowhere near w
+  assert.deepEqual(c.misses, [1, 2, 3, 4]);
+  assert.deepEqual(c.slips, [1, 3]);
+  assert.deepEqual([neighbours('a', 'q'), neighbours('a', 'w'), neighbours('a', 'e'), neighbours('z', 's'), neighbours('z', 'd'), neighbours('1', 'q'), neighbours('m', 'm')], [true, true, false, true, false, true, false]);
+  const r = makeResult({ misses: [], mode: 'type', slip: true });
+  assert.deepEqual([r.pass, r.slip], [true, true]);
 });
 
 test('say mode: tapped words are misses; directions cannot be tapped', () => {

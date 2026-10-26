@@ -365,6 +365,7 @@ export function createSession({ model, index, getPlan, getState, settings, scope
       if (result.misses.length) event.missed = [...result.misses];
       if (result.ms != null) event.ms = result.ms;
       if (result.firstMs != null) event.firstMs = result.firstMs;
+      if (result.slip) event.slip = true; // a wrong key he says was a slip of the finger
 
       S.goes += 1;
       line.last = S.goes;
