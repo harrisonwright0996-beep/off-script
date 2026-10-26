@@ -1,0 +1,18 @@
+# Never commit a script, its audio, or anything made from them.
+*.docx
+*.doc
+*.pdf
+*.zip
+*.mp3
+*.m4a
+*.wav
+*.aif
+*.aiff
+voices.json
+
+# Local tools and test output
+node_modules/
+test-results/
+playwright-report/
+shots/
+.DS_Store
