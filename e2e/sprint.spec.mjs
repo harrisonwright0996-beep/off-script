@@ -168,3 +168,42 @@ test("when today's plan is done: a head start on tomorrow, said plainly", async 
   await page.getByRole('button', { name: 'Stop' }).click();
   await expect(page.getByRole('heading', { name: 'Today', exact: true })).toBeVisible();
 });
+
+test('the keypad by touch: each tap types once, even the same key twice in a row', async ({ page }) => {
+  await importScript(page);
+  await page.getByRole('button', { name: 'Start sprint' }).click();
+  await page.getByRole('button', { name: 'Try it' }).click();
+  await page.getByRole('group', { name: 'Who speaks next?' }).getByRole('button', { name: 'Cast', exact: true }).click();
+  const keys = await keysOf(page);
+  expect(keys).toMatch(/(.)\1/); // "who waited": the same first letter twice in a row
+  for (const k of keys) {
+    const box = await page.locator(`.keypad button[data-key="${k}"]`).boundingBox();
+    await page.touchscreen.tap(box.x + box.width / 2, box.y + box.height / 2);
+  }
+  await expect(page.locator('.result.perfect')).toBeVisible();
+});
+
+test('on a short screen, a long cue and line: the line being typed stays above the keypad', async ({ page }) => {
+  await page.setViewportSize({ width: 393, height: 600 });
+  await importScript(page);
+  await page.evaluate(() => {
+    // The first line's cue made long, as uniqueCues does for a cue that leads to more than one line.
+    const items = window.offScript.model.items;
+    const lead = [items[5], items[6], items[7]];
+    const lines = [{ speaker: items[4].speaker, text: items[4].cue.text }, ...lead.map((x) => ({ speaker: x.speaker, text: x.text }))];
+    window.offScript.index.cues.set(items[0].id, { ...items[0].cue, lead: lead.map((x) => x.id), lines, nth: 2 });
+  });
+  await page.getByRole('button', { name: 'Start sprint' }).click();
+  await page.getByRole('button', { name: 'Try it' }).click();
+  await page.getByRole('group', { name: 'Who speaks next?' }).getByRole('button', { name: 'Cast', exact: true }).click();
+  const keys = await keysOf(page);
+  const below = () => page.evaluate(() => document.querySelector('.line.answer').getBoundingClientRect().bottom - document.querySelector('footer').getBoundingClientRect().top);
+  await page.keyboard.type(keys.slice(0, -1));
+  expect(await below()).toBeLessThanOrEqual(0);
+  await page.keyboard.type(keys.slice(-1));
+  await expect(page.locator('.result.perfect')).toBeVisible();
+  const result = await page.evaluate(() => document.querySelector('.result').getBoundingClientRect().bottom - document.querySelector('footer').getBoundingClientRect().top);
+  expect(result).toBeLessThanOrEqual(0);
+  await page.getByRole('button', { name: 'Next', exact: true }).click();
+  expect(await page.evaluate(() => window.scrollY)).toBe(0); // the next card starts at its cue
+});

@@ -130,12 +130,27 @@ export async function showSprint(ctx, { scope = 'all', minutes = null, custom = 
   const readAloud = (text) =>
     canSpeak() ? button('Read aloud', () => speak(text, { voiceURI: ctx.settings.voiceURI, rate: ctx.settings.rate })) : null;
 
+  // The page scrolls behind the bar and the footer (the keypad, or the buttons), so a long cue and a
+  // long line can push the line being answered out of sight. Scrolls down just enough to show `el`
+  // above the footer, keeping its top below the bar.
+  function keepInView(el) {
+    if (!el || !el.isConnected) return;
+    const bar = ctx.root.querySelector('.bar');
+    const foot = ctx.root.querySelector('footer');
+    const top = bar ? bar.getBoundingClientRect().bottom : 0;
+    const bottom = foot ? foot.getBoundingClientRect().top : window.innerHeight;
+    const r = el.getBoundingClientRect();
+    const by = Math.min(r.bottom + 8 - bottom, r.top - 8 - top);
+    if (by > 0) window.scrollBy(0, by);
+  }
+
   // Draws a card: the bar, where it is, any message, then the card's own content and actions.
   function frame(c, content, footer, footerClass = '') {
     quiet();
     const actions = undo.length ? [button('Undo', doUndo, { class: 'btn link', aria: 'Undo last answer' })] : [];
     const body = [timeBar(), where(c), c.message ? h('p', { class: 'message', role: 'status' }, c.message) : null, ...content];
     clear(ctx.root).append(screen({ title: c.label, back: stop, backLabel: 'Stop', actions, body, footer, footerClass, className: 'sprint' }));
+    window.scrollTo(0, 0); // each card starts at its cue
   }
 
   function showCard(c, focus = true) {
@@ -183,6 +198,7 @@ export async function showSprint(ctx, { scope = 'all', minutes = null, custom = 
           words.append(b);
         });
         clear(answerArea).append(h('p', { class: 'prompt' }, 'Tap any word you missed or changed.'), words);
+        keepInView(answerArea);
         let sent = false; // a quick second tap is not a second answer
         clear(footBox).append(
           button('Done', () => {
@@ -267,12 +283,14 @@ export async function showSprint(ctx, { scope = 'all', minutes = null, custom = 
         if (!r) return;
         hint.remove();
         draw();
+        keepInView(line);
         announce(`${r.correct ? '' : 'Missed: '}${tokens[r.index].d}`);
         if (r.done) finish(c, makeResult({ misses: check.misses, speakerWrong, mode: 'type' }));
       });
       removeKeys = pad.remove;
       clear(footBox).append(pad.el);
       foot.className = 'foot keyboard';
+      keepInView(line);
     }
 
     function sayAnswer() {
@@ -307,6 +325,7 @@ export async function showSprint(ctx, { scope = 'all', minutes = null, custom = 
       [button('Next', next, { class: 'btn primary' })],
     );
     ctx.root.querySelector('footer .btn').focus({ preventScroll: true });
+    keepInView(block);
     if (result.pass && ctx.settings.autoAdvance) autoTimer = setTimeout(next, AUTO_ADVANCE_MS);
   }
 
