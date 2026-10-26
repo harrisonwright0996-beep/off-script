@@ -4,13 +4,14 @@
 // Every line the sprint shows needs one go right from the cue alone before the sprint is over; only that
 // counts as right. Its first go is with the first letters while the line is new to him (right from the
 // cue alone fewer than three times), when it was missed last time, or when his forgetting curve says he
-// may not manage without (a chance of recall now below 80%). A new line has the
-// first letters again before it is first asked without them: taught (read, then said from the first
-// letters) or right at its first try, its next go is with the first letters too. A miss shows the right
-// line and moves on: the line comes back after at least three other answers, with the first letters,
-// then once more without them.
-// New lines come in rounds: teach a beat's lines (each read, then said from the first letters), then run
-// the beats resting from the round before and the new beat. Between rounds come the lines still owed a
+// may not manage without (a chance of recall now below 80%). A new line has the first letters before it
+// is first asked without them: taught, it is read with the rest of its beat and said from the first
+// letters in the beat's run, so there is a gap between reading it and saying it (a go straight after
+// reading is hardly a recall); right at its first try, its next go is with the first letters. A miss
+// shows the right line and moves on: the line comes back after at least three other answers, with the
+// first letters, then once more without them.
+// New lines come in rounds: teach a beat's lines (each tried from its cue first, or read), then run the
+// beats resting from the round before and the new beat. Between rounds come the lines still owed a
 // go, then tests of what is already learned, up to six at a time and the most at risk first, so older
 // lines are checked in between new ones. When nothing new is left, it is tests.
 // At time up nothing new comes: the sprint carries on until every line it has shown is right without help.
@@ -117,7 +118,8 @@ export function createSession({ model, index, getPlan, getState, settings, scope
   }
 
   // What this sprint knows about a line it has shown: the go it needs next, when it last had one (in
-  // goes), and whether it was missed, or right with the first letters, earlier in the sprint.
+  // goes), whether it was missed, or right with the first letters, earlier in the sprint, and whether it
+  // was taught (read with its beat) in it.
   function lineOf(id) {
     return (S.lines[id] ||= { need: firstNeed(id), last: -GAP, missed: false, helped: false });
   }
@@ -323,7 +325,8 @@ export function createSession({ model, index, getPlan, getState, settings, scope
       return card;
     },
 
-    // For test and front cards. action: 'try' | 'teach' | 'next'.
+    // For test and front cards. action: 'try' | 'teach' | 'next'. Returns the card that follows, or null
+    // once a line taught is read: then advance(), as after an answer.
     choose(action) {
       const t = S.task;
       const step = currentStep(t);
@@ -331,8 +334,16 @@ export function createSession({ model, index, getPlan, getState, settings, scope
         t.pretest = action === 'try';
         t.step = action === 'try' ? 'floor' : 'front';
       } else if (step === 'front') {
-        if (t.step) t.step = 'help';
-        else lineOf(currentId(t)).need = 'help';
+        const line = lineOf(currentId(t));
+        line.need = 'help';
+        if (t.step) {
+          // Taught: on to the next line of the beat. This one is said from the first letters in the
+          // beat's run, once the rest is read.
+          line.taught = true;
+          t.done = true;
+          card = null;
+          return null;
+        }
       }
       card = cardFor(t);
       return card;
@@ -373,7 +384,7 @@ export function createSession({ model, index, getPlan, getState, settings, scope
         if (help) line.helped = true;
         // A new line has the first letters once more before it goes without: after its first go right
         // with them, or when it was right at its very first try.
-        const again = helpMode() !== 'none' && (help ? prev.passes === 0 && !prev.helped : prev.status === 'new');
+        const again = helpMode() !== 'none' && (help ? prev.passes === 0 && !prev.helped && !line.taught : prev.status === 'new');
         line.need = again ? 'help' : help ? 'clean' : 'done';
       } else {
         line.missed = true;

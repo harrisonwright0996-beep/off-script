@@ -182,7 +182,8 @@ export async function showSprint(ctx, { scope = 'all', minutes = null, custom = 
     tick();
     const c = session.choose(action);
     await saveSprint();
-    showCard(c);
+    if (c) showCard(c);
+    else carryOn(() => session.advance()); // a line taught is read: on to the next card, as after an answer
   }
 
   // Say: reveal the line, tap any word missed or changed, then Done with the words tapped.

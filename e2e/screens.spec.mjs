@@ -32,7 +32,7 @@ test('settings: look changes at once; back up, restore, remove everything', asyn
   });
   await importScript(page);
   await page.getByRole('button', { name: 'Start sprint' }).click();
-  for (let i = 0; i < 4; i++) await answerCard(page);
+  for (let i = 0; i < 10; i++) await answerCard(page); // the first beat read, then into its run
   await page.getByRole('button', { name: 'Stop' }).click();
   await page.getByRole('button', { name: 'Settings' }).click();
   await page.getByLabel('Colours').selectOption({ label: 'Dark' });
@@ -82,7 +82,7 @@ test('start again from 0%: every line back to not started; the script, audio pac
   await importScript(page);
   await importPack(page);
   await page.getByRole('button', { name: 'Start sprint' }).click();
-  for (let i = 0; i < 4; i++) await answerCard(page);
+  for (let i = 0; i < 10; i++) await answerCard(page); // the first beat read, then into its run
   await page.getByRole('button', { name: 'Stop' }).click();
   await page.getByRole('button', { name: 'Settings' }).click();
   await page.getByLabel('Colours').selectOption({ label: 'Dark' });
@@ -114,7 +114,9 @@ test('start again from 0%: every line back to not started; the script, audio pac
 test('start this scene again: its lines go back to not started, other scenes keep theirs', async ({ page }) => {
   await importScript(page);
   await page.getByRole('button', { name: 'Start sprint' }).click();
-  for (let i = 0; i < 3; i++) await answerCard(page); // the Prologue's first line, taught
+  await page.getByRole('button', { name: 'Try it' }).click();
+  await page.waitForFunction(() => window.offScript.card.step === 'floor');
+  await answerCard(page); // the Prologue's first line, right at the first try
   await page.getByRole('button', { name: 'Stop' }).click();
   await page.getByRole('button', { name: 'Choose what to practise' }).click();
   await page.getByLabel('Where').selectOption({ label: 'Scene 1: The Harbour' });

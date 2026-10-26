@@ -1,7 +1,7 @@
 // Accessibility: axe on every screen, in every theme. No serious or critical problems allowed.
 import { test, expect } from '@playwright/test';
 import { createRequire } from 'node:module';
-import { importScript } from './helpers.mjs';
+import { importScript, answerCard } from './helpers.mjs';
 
 const AXE = createRequire(import.meta.url).resolve('axe-core/axe.min.js');
 test.use({ bypassCSP: true }); // only so axe itself can be added to the page
@@ -47,15 +47,7 @@ for (const theme of ['cream', 'light', 'dark']) {
     await check(page, 'card: result', found);
     await page.getByRole('button', { name: 'Next', exact: true }).click(); // a missed try is taught: read it
     await check(page, 'card: front', found);
-    await page.getByRole('button', { name: 'Next', exact: true }).click();
-    await expect(page.getByText('Say it aloud from the first letters, then reveal it.')).toBeVisible();
-    await check(page, 'card: first letters', found);
-    await page.getByRole('button', { name: 'Reveal' }).click();
-    await check(page, 'card: first letters revealed', found);
-    await page.getByRole('button', { name: 'Done' }).click();
-    await expect(page.getByText('It comes back later with the first letters, then without.')).toBeVisible();
-    await check(page, 'card: first letters result', found);
-    await page.getByRole('button', { name: 'Next', exact: true }).click();
+    await page.getByRole('button', { name: 'Next', exact: true }).click(); // then on through the beat
     await expect(page.getByText('The second time these lines come in the scene.')).toBeVisible();
     await check(page, 'card: a longer cue', found);
     await page.getByRole('button', { name: 'Try it' }).click();
@@ -64,6 +56,17 @@ for (const theme of ['cream', 'light', 'dark']) {
     await check(page, 'card: say before reveal', found);
     await page.getByRole('button', { name: 'Reveal' }).click();
     await check(page, 'card: say', found);
+    await page.getByRole('button', { name: 'Done' }).click();
+    await page.getByRole('button', { name: 'Next', exact: true }).click();
+    // The rest of the beat is read, then the beat is run with the first letters.
+    const letters = page.getByText('Say it aloud from the first letters, then reveal it.');
+    for (let i = 0; i < 12 && !(await letters.count()); i++) await answerCard(page);
+    await check(page, 'card: first letters', found);
+    await page.getByRole('button', { name: 'Reveal' }).click();
+    await check(page, 'card: first letters revealed', found);
+    await page.getByRole('button', { name: 'Done' }).click();
+    await expect(page.getByText('It comes back later without the first letters.')).toBeVisible();
+    await check(page, 'card: first letters result', found);
     await page.getByRole('button', { name: 'Stop' }).click();
 
     await page.getByRole('button', { name: 'Choose what to practise' }).click();
