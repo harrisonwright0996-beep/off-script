@@ -58,7 +58,8 @@ export function dayOrder(ids, day) {
 }
 
 // New work, from his most recent checks of learned lines before today: the last 100 (at least 40
-// are needed; sprints only, since walks are marked from memory afterwards), the ones he got right
+// are needed; sprints only, since walks are marked from memory afterwards; and, as for his personal
+// factor, from the cue alone with no first letters on or just before them), the ones he got right
 // against the number his forgetting curve expected for those same checks. Bad luck alone often costs
 // a few points, so a shortfall of up to 3 points changes nothing; beyond that new work is cut
 // smoothly (5% for each point more), to no less than half, so there is more time for what is learned.
@@ -66,7 +67,7 @@ export const GATE = { window: 100, min: 40, slack: 0.03, slope: 5, floor: 0.5 };
 
 export function recallGate(events, { before = Infinity, k = 1 } = {}) {
   const checks = events
-    .filter((e) => e.time < before && e.mode !== 'walk' && e.prev && e.prev.status === 'review' && e.prev.stability && e.prev.lastTime && isCheck(e))
+    .filter((e) => e.time < before && e.mode !== 'walk' && e.prev && e.prev.status === 'review' && e.prev.stability && e.prev.lastTime && !e.relearn && !e.help && !e.primed)
     .sort((a, b) => a.time - b.time)
     .slice(-GATE.window);
   const passes = checks.filter((e) => e.pass).length;
@@ -76,7 +77,8 @@ export function recallGate(events, { before = Infinity, k = 1 } = {}) {
   return { total: checks.length, passes, expected, factor: Math.min(1, Math.max(GATE.floor, 1 - cut)) };
 }
 
-// Today's share of the new words still to start, against an even spread over the days left.
+// Today's share of the new words still to start, against an even spread over the days left, until
+// off script day (more nights before it for what is learned early).
 export const FRONT_LOAD = 1.25;
 
 // How many days a learned line may go untested, whatever the curve says. 0: once every day.
@@ -261,7 +263,8 @@ export function buildPlan({ model, index, getState, events, settings, today, now
   const finalEnd = today < settings.deadline ? settings.deadline : settings.showDay;
   const target = phase === 'learning' ? settings.lastNewDay : phase === 'final' ? addDays(finalEnd, -1) : addDays(today, 2);
   const daysLeft = Math.max(1, daysBetween(today, target) + 1);
-  const fullQuota = Math.ceil((newRemaining + startedToday) * Math.min(1, FRONT_LOAD / daysLeft));
+  const load = today < settings.deadline ? FRONT_LOAD : 1;
+  const fullQuota = Math.ceil((newRemaining + startedToday) * Math.min(1, load / daysLeft));
   const gate = recallGate(events, { before: dayEnd(addDays(today, -1)), k });
   const quota = Math.ceil(fullQuota * gate.factor);
   const newBeats = model.beats.filter((b) => beatStage(b, getState) !== 'done' && !b.itemIds.every(isNew)).map((b) => b.id);
@@ -316,13 +319,13 @@ export function buildPlan({ model, index, getState, events, settings, today, now
     const perDay = Math.max(prior.reduce((a, b) => a + b, 0) / 3, startedToday);
     const remainingAfterToday = Math.max(0, newRemaining - Math.max(0, quota - startedToday));
     const finish = perDay > 0 ? addDays(today, Math.ceil((startedToday >= perDay ? newRemaining : remainingAfterToday) / perDay)) : null;
-    const needed = duration((reviewSec + fullQuota * pace.newSecPerWord) / 60);
+    const needed = duration((reviewSec + quota * pace.newSecPerWord) / 60);
     if (finish && finish <= target) forecast = `At this pace every scene is started by ${when(finish)}.`;
     else if (finish) forecast = `At this pace every scene is started by ${when(finish)}. About ${needed} today ${atPace} keeps it on track for ${when(target)}.`;
-    else forecast = `To start every scene by ${when(target)}, aim for about ${num(fullQuota)} new words today: about ${needed} ${atPace}.`;
+    else forecast = `To start every scene by ${when(target)}, aim for about ${num(quota)} new words today: about ${needed} ${atPace}.`;
   }
 
-  if (gate.factor < 1) {
+  if (newRemaining > 0 && quota < fullQuota) {
     const fewer = Math.max(5, Math.round(((1 - gate.factor) * 100) / 5) * 5);
     notes.push(
       `Your last ${gate.total} checks had ${gate.passes} word perfect, where your forgetting curve expected about ${Math.round(gate.expected)}. So today has about ${fewer}% fewer new lines, and more time for what you know.`,
@@ -333,7 +336,8 @@ export function buildPlan({ model, index, getState, events, settings, today, now
   if (phase === 'learning' && allLearned) notes.push('Every line is learned, ahead of plan. From now on it is checks and runs.');
   if (phase === 'final') notes.push('Final days: every learned line every day, whole scenes from the top, the weakest first.');
   if (phase === 'final' && newRemaining > 0) notes.push(`${num(newRemaining)} words are still new. They come in between the runs today.`);
-  if (today === addDays(settings.deadline, -1) || today === addDays(settings.showDay, -1)) notes.push('Today, do at least one whole run in Type or Say mode. It is the precise check.');
+  const showAhead = !!settings.showDay && settings.showDay > settings.deadline;
+  if (today === addDays(settings.deadline, -1) || (showAhead && today === addDays(settings.showDay, -1))) notes.push('Today, do at least one whole run in Type or Say mode. It is the precise check.');
   if (phase === 'deadline') notes.push('Off script day. One run of the whole play today, and Walk is ideal.');
   if (phase === 'show') notes.push('Show week. Short checks keep every line at its peak; anything missed comes first next time.');
   const lastActive = model.items.reduce((d, it) => {

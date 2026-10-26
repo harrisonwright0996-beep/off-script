@@ -141,3 +141,12 @@ test('the same exchange in two scenes needs no count: the card names the scene',
   assert.equal(cues.get(five.id).lead.length, CUE_LINES);
   assert.deepEqual([cues.get(five.id).nth, cues.get(six.id).nth], [undefined, undefined]);
 });
+
+test('the same words from a different speaker are a different line: the cue is made longer', () => {
+  const m = play([['CARL', 'Right.'], ['ANNA', 'Are you ready?'], ['BEN', 'Yes.'], ['CARL', 'Good.'], ['ANNA', 'Are you ready?'], ['CARL', 'Yes.']]);
+  const cues = uniqueCues(m);
+  const [, first, benYes, , second, carlYes] = m.items;
+  assert.deepEqual([...cues.keys()], [benYes.id, carlYes.id], 'who speaks next has one right answer too');
+  assert.deepEqual(cues.get(benYes.id).lead, [first.id]);
+  assert.deepEqual(cues.get(carlYes.id).lead, [second.id]);
+});

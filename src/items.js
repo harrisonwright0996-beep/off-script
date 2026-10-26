@@ -245,13 +245,14 @@ const flat = (s) => s.toLowerCase().replace(/[^\p{L}\p{N} ]/gu, '').replace(/\s+
 export function uniqueCues(model) {
   const { items } = model;
   const said = (cue) => `${cue.speaker ?? ''}|${flat(cue.text)}`;
+  const line = (x) => `${x.speaker}|${flat(x.text)}`; // who says it and what: the same words from someone else are another line
   // What comes before line i: its own cue (n = 0), or the cue of the line n back and the lines from
   // there in full. null once that would run back past the start of the scene.
   const before = (i, n) => {
     if (n === 0) return said(items[i].cue);
     const j = i - n;
     if (j < 0 || items[j].scene !== items[i].scene) return null;
-    return [said(items[j].cue), ...items.slice(j, i).map((x) => `${x.speaker}|${flat(x.text)}`)].join('/');
+    return [said(items[j].cue), ...items.slice(j, i).map(line)].join('/');
   };
   const groups = new Map();
   items.forEach((it, i) => {
@@ -262,9 +263,9 @@ export function uniqueCues(model) {
   });
   const cues = new Map();
   for (const group of groups.values()) {
-    if (new Set(group.map((i) => flat(items[i].text))).size < 2) continue; // every line it leads to is the same
+    if (new Set(group.map((i) => line(items[i]))).size < 2) continue; // every line it leads to is the same
     for (const i of group) {
-      const rivals = group.filter((j) => flat(items[j].text) !== flat(items[i].text));
+      const rivals = group.filter((j) => line(items[j]) !== line(items[i]));
       let n = 0;
       let unique = false;
       while (!unique && n < CUE_LINES && before(i, n + 1) !== null) {

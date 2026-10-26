@@ -294,8 +294,53 @@ test('goes with the first letters: their time counts, but only one outcome per c
   add({ help: true, pass: false }); // missed even with the first letters: a check, missed
   add({ relearn: true, help: true });
   add({ relearn: true });
+  assert.equal(recallGate(events).total, 0, 'the gate, like his personal factor, counts only checks from the cue alone, with no first letters on or just before them');
+  add({ pass: false });
+  add({});
   const gate = recallGate(events);
-  assert.deepEqual([gate.total, gate.passes], [11, 8], 'help passes and relearning left out; a help miss counts');
+  assert.deepEqual([gate.total, gate.passes], [2, 1]);
+  events.splice(-2);
   const pace = paceOf(events, app.today, app.index.byId);
   assert.equal(pace.dueSecPerItem, (20 + 22 * 10) / 11, 'every go takes its time (20 seconds for the first, 10 for each after); 11 checks');
+});
+
+test('after off script day the new words left are spread evenly over three days, with no front loading', () => {
+  const app = fakeApp();
+  app.setDay('2026-11-05');
+  assert.equal(app.plan().quota, Math.ceil(143 / 3));
+  app.setDay('2026-12-13');
+  assert.equal(app.plan().quota, 143, 'the day before show week: everything left');
+});
+
+test('the gate note only when new lines are really cut, and the forecast asks for the same number', () => {
+  const planOf = (app) => buildPlan({ model: app.model, index: app.index, getState: app.getState, events: app.events, settings: app.settings, today: app.today, now: app.clock, fit: { k: 1, n: 0 } });
+  let app = fakeApp();
+  checks(app, 100, 87); // exactly at the slack: no cut, however the sums round
+  let plan = planOf(app);
+  assert.equal(plan.quota, Math.ceil((143 * 1.25) / 7));
+  assert.equal(plan.notes.length, 0);
+
+  app = fakeApp();
+  checks(app, 100, 60);
+  plan = planOf(app);
+  assert.equal(plan.quota, Math.ceil(Math.ceil((143 * 1.25) / 7) * 0.5));
+  assert.match(plan.notes[0], /about 50% fewer new lines/);
+  assert.match(plan.forecast, new RegExp(`aim for about ${plan.quota} new words today`));
+
+  app = fakeApp();
+  learn(app, app.model.items.map((it) => it.id));
+  app.setDay('2026-11-10');
+  checks(app, 100, 60);
+  assert.equal(planOf(app).notes.some((n) => n.includes('fewer new lines')), false, 'no new lines left: nothing to cut');
+});
+
+test('a missing show day, or one on or before off script day, changes nothing else', () => {
+  for (const showDay of [null, undefined, '', '2026-11-02']) {
+    const app = fakeApp({ settings: { showDay } });
+    app.setDay('2026-11-01');
+    const plan = app.plan();
+    assert.equal(plan.notes.some((n) => n.startsWith('Today, do at least one whole run')), false, String(showDay));
+    app.setDay('2026-11-20');
+    assert.doesNotThrow(() => app.plan(), String(showDay));
+  }
 });
