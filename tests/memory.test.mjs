@@ -23,11 +23,11 @@ test('recall grows memory most when it was nearly forgotten, less once it is str
   assert.ok(near(afterMiss(100), 2) && near(afterMiss(0.2), 1 / 6), 'a miss comes back within 10 minutes to 2 hours');
 });
 
-test('a new line comes back several times on the day it is learned, then less and less often', () => {
+test('a new line comes back once or twice more on the day it is learned, then less and less often', () => {
   const t0 = Date.UTC(2026, 9, 26, 9);
   const day = '2026-10-26';
   let s = applyResult(newState('x'), { pass: true, day, time: t0, mode: 'type', relearn: true });
-  assert.equal(s.stability, FIRST.studied, 'first recalled after teaching: 10 minutes');
+  assert.equal(s.stability, FIRST.studied, 'first recalled after teaching: an hour');
   s = applyResult(s, { pass: true, day, time: t0 + 3 * 60000, mode: 'type' }); // beat run
   s = applyResult(s, { pass: true, day, time: t0 + 10 * 60000, mode: 'type' }); // beat run again
   assert.equal(s.status, 'review');
@@ -38,7 +38,8 @@ test('a new line comes back several times on the day it is learned, then less an
     s = applyResult(s, { pass: true, day, time: when, mode: 'type' });
   }
   assert.ok(gaps.every((g, i) => i === 0 || g > gaps[i - 1]), `expanding: ${gaps.map((g) => g.toFixed(2)).join(', ')}`);
-  assert.ok(gaps[0] < 1 && gaps[0] + gaps[1] + gaps[2] < 10, 'three more checks within about ten hours of learning it');
+  assert.ok(gaps[0] >= 1 && gaps[0] < 2 && gaps[0] + gaps[1] < 6, 'about an hour, then a few hours: once or twice more that day');
+  assert.ok(gaps[2] > 8, 'then not until late that day or the next');
   const known = applyResult(newState('y'), { pass: true, day, time: t0, mode: 'type', pretest: true });
   assert.equal(known.stability, FIRST.known, 'known before being taught: 4 hours');
 });

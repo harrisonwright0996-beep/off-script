@@ -3,6 +3,7 @@
 // yet secure, or missed last time), 'learned' (everything learned so far) or 'all' (every line). How
 // much help is the session's to apply (session.js).
 import { isSecure } from './state.js';
+import { helpFirst } from './session.js';
 
 const KEEP = {
   learning: (s) => s.status !== 'new' && !isSecure(s),
@@ -18,17 +19,17 @@ export function practiceLines({ model, getState, scene = null, which }) {
 export const practiceTitle = ({ model, scene = null, which }) => `${scene === null ? 'The whole play' : model.scenes[scene].heading}, ${NAMES[which]}`;
 
 // Goes a started line gets: from the cue alone, or the first letters first and later without (a
-// little more when it is read first). Left to Off Script, secure lines mostly need no help.
-const GOES = { none: () => 1, auto: (s) => (isSecure(s) ? 1 : 2), letters: () => 2, read: () => 2.5 };
+// little more when it is read first). Left to Off Script, as the sprint decides (session.js).
+const GOES = { none: () => 1, auto: (s, now, k) => (helpFirst(s, now, k) ? 2 : 1), letters: () => 2, read: () => 2.5 };
 
 // Minutes at his pace (paceOf in plan.js): a line not started yet at the pace of learning, others at
-// the pace of runs.
-export function practiceMinutes({ index, getState, itemIds, help, pace }) {
+// the pace of runs. now and k: the moment and his personal factor, for the chance of recall.
+export function practiceMinutes({ index, getState, itemIds, help, pace, now = Date.now(), k = 1 }) {
   let sec = 0;
   for (const id of itemIds) {
     const s = getState(id);
     const words = index.byId.get(id).words;
-    sec += s.status === 'new' ? words * pace.newSecPerWord : GOES[help](s) * words * pace.runSecPerWord;
+    sec += s.status === 'new' ? words * pace.newSecPerWord : GOES[help](s, now, k) * words * pace.runSecPerWord;
   }
   return sec / 60;
 }

@@ -3,8 +3,10 @@
 // Every line he has recalled has a stability S, in hours: how long until the chance of saying it
 // word perfect falls to 90%. t hours after it was last tested the chance is R = (1 + F t / S)^(-1/2),
 // a power curve: forgetting is quick at first, then slows (F = 19/81 puts R at 0.9 when t = S).
-// * A brand new line starts at 10 minutes (4 hours if he knew it before being taught), so it comes
-//   back several times on the day it is learned, then less and less often.
+// * A brand new line starts at an hour (4 hours if he knew it before being taught). By then it has
+//   been read, said from the first letters and recalled in its beat runs, and same day goes add
+//   little that lasts, so it comes back once or twice more on the day it is learned, then less and
+//   less often.
 // * Recalling it multiplies S: most when it was close to being forgotten (the spacing effect), less
 //   as S gets large, and less for a line that keeps slipping.
 // * Recalling it just after a go with the first letters grows S by half as much: the first letters
@@ -15,7 +17,7 @@
 export const HOUR = 3600000;
 export const TARGET = 0.9; // a line is ready to test when its chance of recall falls to 90%
 export const OPENING_TARGET = 0.95; // scene openings, which have no line before them to lead in
-export const FIRST = { studied: 1 / 6, known: 4 }; // hours: first recalled after teaching, or before it
+export const FIRST = { studied: 1, known: 4 }; // hours: first recalled after teaching, or before it
 export const HELPED_GROWTH = 0.5; // the share of the growth when the first letters came just before
 const F = 19 / 81;
 const MIN_STABILITY = 1 / 6;

@@ -80,9 +80,9 @@ test('after a walk its results are saved at the moments heard, and a later walk 
   assert.equal(records[0].event.time, app.clock + tape.trials[0].answerEnd * 1000);
   const newIds = [...app.model.beats[2].itemIds, ...app.model.beats[3].itemIds]; // today's beat and a head start
   assert.ok(newIds.every((id) => app.getState(id).status === 'review'));
-  app.wait(60);
+  app.wait(90);
   const later = walk(app, manifest, 3600);
-  assert.ok(newIds.includes(later.trials[0].id), 'an hour on, the new lines come back first');
+  assert.ok(newIds.includes(later.trials[0].id), 'an hour and a half on, the new lines come back first');
   assert.equal(later.parts[0].label, 'Run: Scene 3: Landfall', 'the head start, learned last and checked least, is the most at risk');
 });
 

@@ -2,28 +2,39 @@
 // memory (memory.js), recent results, settings, the date and the time. There is no timetable.
 // Ready to test: a learned line whose chance of recall has fallen to its target (90%, or 95% for a
 // scene opening), or that was missed and not yet relearned, or that has gone too long untested for
-// the date (3 days while learning; every line every day in the final days and on off script day).
-// Tests: a stretch of ready lines in flow (whole scenes from the top in the final days), otherwise
-// the line on its own from its cue. Most at risk first.
-// New: whole beats in running order, up to today's share of what is left. The sprint puts the tests
-// in between the new beats.
+// the date (3 days while learning and in show week, 14 days in between; every line every day in the
+// final days before off script day and before show week, and on off script day).
+// Tests: a stretch of ready lines in flow (whole scenes from the top in the final days, the weakest
+// scene first), otherwise the line on its own from its cue. Most at risk first.
+// New: whole beats in running order, up to today's share of what is left (a little more than an even
+// spread, so more comes while reviews are light). The sprint puts the tests in between the new beats.
 // It adapts both ways: the share is what is left over the days left, so a big day makes later days
 // lighter and a missed day spreads out quietly; the curve is fitted to his own results; times come
 // from his own pace; once today's plan is done, "keep going" work is ready.
 import { addDays, dayEnd, daysBetween, formatDay, weekday } from './dates.js';
 import { category, isWordPerfect, needsTeaching } from './state.js';
 import { fnv1a, spineItemIds } from './items.js';
-import { OPENING_TARGET, TARGET, fitFactor, readyAt, recallNow } from './memory.js';
+import { HOUR, OPENING_TARGET, TARGET, fitFactor, readyAt, recallNow, retrievability } from './memory.js';
 
 export const RUN_MIN = 4; // ready lines needed for a run in flow
 export const RUN_DENSITY = 0.6; // share of a stretch that must be ready
 export const RUN_GAP = 2; // lines not ready that a stretch can step over
 export const REVIEW_BURST = 6; // tests in a row before the next new beat
 
+export const FINAL_DAYS = 3; // the days before show week that are final days again
+export const SHOW_WEEK = 7;
+
+// Learning, the final days, off script day, then maintenance until the final days before show week
+// (the second peak), show week itself, and maintenance again.
 export function phaseOf(day, settings) {
   if (day <= settings.lastNewDay) return 'learning';
   if (day < settings.deadline) return 'final';
   if (day === settings.deadline) return 'deadline';
+  const show = settings.showDay;
+  if (show && show > settings.deadline) {
+    if (day < show && day >= addDays(show, -FINAL_DAYS)) return 'final';
+    if (day >= show && day < addDays(show, SHOW_WEEK)) return 'show';
+  }
   return 'maintenance';
 }
 
@@ -46,17 +57,30 @@ export function dayOrder(ids, day) {
   return [...ids].sort((a, b) => h.get(a) - h.get(b));
 }
 
-// Yesterday's tests of learned lines: if fewer than 85% were word perfect (and there were at least
-// 20), halve new work, so there is more time for what is already learned.
-export function recallGate(events, day) {
-  const tests = events.filter((e) => e.day === day && e.prev && e.prev.status === 'review' && isCheck(e));
-  const passes = tests.filter((e) => e.pass).length;
-  const accuracy = tests.length ? passes / tests.length : null;
-  return { total: tests.length, accuracy, halved: tests.length >= 20 && accuracy < 0.85 };
+// New work, from his most recent checks of learned lines before today: the last 100 (at least 40
+// are needed; sprints only, since walks are marked from memory afterwards), the ones he got right
+// against the number his forgetting curve expected for those same checks. Bad luck alone often costs
+// a few points, so a shortfall of up to 3 points changes nothing; beyond that new work is cut
+// smoothly (5% for each point more), to no less than half, so there is more time for what is learned.
+export const GATE = { window: 100, min: 40, slack: 0.03, slope: 5, floor: 0.5 };
+
+export function recallGate(events, { before = Infinity, k = 1 } = {}) {
+  const checks = events
+    .filter((e) => e.time < before && e.mode !== 'walk' && e.prev && e.prev.status === 'review' && e.prev.stability && e.prev.lastTime && isCheck(e))
+    .sort((a, b) => a.time - b.time)
+    .slice(-GATE.window);
+  const passes = checks.filter((e) => e.pass).length;
+  const expected = checks.reduce((n, e) => n + retrievability((e.time - e.prev.lastTime) / HOUR, k * e.prev.stability), 0);
+  const shortfall = checks.length ? (expected - passes) / checks.length : 0;
+  const cut = checks.length >= GATE.min ? GATE.slope * (shortfall - GATE.slack) : 0;
+  return { total: checks.length, passes, expected, factor: Math.min(1, Math.max(GATE.floor, 1 - cut)) };
 }
 
+// Today's share of the new words still to start, against an even spread over the days left.
+export const FRONT_LOAD = 1.25;
+
 // How many days a learned line may go untested, whatever the curve says. 0: once every day.
-export const maxDays = (phase) => (phase === 'learning' ? 3 : phase === 'maintenance' ? 21 : 0);
+export const maxDays = (phase) => (phase === 'learning' || phase === 'show' ? 3 : phase === 'maintenance' ? 14 : 0);
 
 const targetOf = (openings, id) => (openings.has(id) ? OPENING_TARGET : TARGET);
 
@@ -88,7 +112,8 @@ function fromWeakest(index, learned, weak, recall) {
 // flow, { kind: 'line', id, r } for a line on its own. Lines learned together fall due together, so
 // ready lines come in stretches: a stretch with at least four ready lines, at least 60% of it ready,
 // is run in flow from its first ready line; other ready lines are tested on their own. In the final
-// days every scene is run whole from the top, misses first, then the play in order.
+// days every scene is run whole from the top: those with a miss first, then the weakest scene first
+// (the lowest chance of recall in it), so a short day still covers the scenes most at risk.
 export function testsOf({ model, index, getState, ready, phase, today }) {
   const whole = phase === 'final' || phase === 'deadline';
   const tests = [];
@@ -123,7 +148,7 @@ export function testsOf({ model, index, getState, ready, phase, today }) {
   const rank = new Map(dayOrder([...ready.keys()], today).map((id, i) => [id, i]));
   const first = (t) => rank.get(t.kind === 'run' ? t.itemIds[0] : t.id) ?? 0;
   const group = (t) => (t.r === 0 ? 0 : whole && t.kind === 'run' ? 1 : 2);
-  return tests.sort((a, b) => group(a) - group(b) || (group(a) === 1 ? a.scene - b.scene || a.itemIds[0].localeCompare(b.itemIds[0]) : a.r - b.r) || first(a) - first(b));
+  return tests.sort((a, b) => group(a) - group(b) || a.r - b.r || (group(a) === 1 ? a.scene - b.scene : first(a) - first(b)));
 }
 
 // Keep going: every scene with learned lines, the least secure first, from its weakest beat.
@@ -233,11 +258,12 @@ export function buildPlan({ model, index, getState, events, settings, today, now
   const newRemaining = model.items.filter((it) => isNew(it.id)).reduce((n, it) => n + it.words, 0);
   const startedOn = (d) => model.items.filter((it) => getState(it.id).firstDay === d).reduce((n, it) => n + it.words, 0);
   const startedToday = startedOn(today);
-  const target = phase === 'learning' ? settings.lastNewDay : phase === 'final' ? addDays(settings.deadline, -1) : addDays(today, 2);
+  const finalEnd = today < settings.deadline ? settings.deadline : settings.showDay;
+  const target = phase === 'learning' ? settings.lastNewDay : phase === 'final' ? addDays(finalEnd, -1) : addDays(today, 2);
   const daysLeft = Math.max(1, daysBetween(today, target) + 1);
-  const fullQuota = Math.ceil((newRemaining + startedToday) / daysLeft);
-  const gate = recallGate(events, addDays(today, -1));
-  const quota = gate.halved ? Math.ceil(fullQuota / 2) : fullQuota;
+  const fullQuota = Math.ceil((newRemaining + startedToday) * Math.min(1, FRONT_LOAD / daysLeft));
+  const gate = recallGate(events, { before: dayEnd(addDays(today, -1)), k });
+  const quota = Math.ceil(fullQuota * gate.factor);
   const newBeats = model.beats.filter((b) => beatStage(b, getState) !== 'done' && !b.itemIds.every(isNew)).map((b) => b.id);
   const focus = settings.focusScene;
   const ordered = focus == null ? model.beats : [...model.beats.filter((b) => b.scene === focus), ...model.beats.filter((b) => b.scene !== focus)];
@@ -292,21 +318,24 @@ export function buildPlan({ model, index, getState, events, settings, today, now
     const finish = perDay > 0 ? addDays(today, Math.ceil((startedToday >= perDay ? newRemaining : remainingAfterToday) / perDay)) : null;
     const needed = duration((reviewSec + fullQuota * pace.newSecPerWord) / 60);
     if (finish && finish <= target) forecast = `At this pace every scene is started by ${when(finish)}.`;
-    else if (finish) forecast = `At this pace every scene is started by ${when(finish)}. About ${needed} a day ${atPace} gets it done by ${when(target)}.`;
-    else forecast = `To start every scene by ${when(target)}, aim for about ${num(fullQuota)} new words a day: about ${needed} ${atPace}.`;
+    else if (finish) forecast = `At this pace every scene is started by ${when(finish)}. About ${needed} today ${atPace} keeps it on track for ${when(target)}.`;
+    else forecast = `To start every scene by ${when(target)}, aim for about ${num(fullQuota)} new words today: about ${needed} ${atPace}.`;
   }
 
-  if (gate.halved) {
+  if (gate.factor < 1) {
+    const fewer = Math.max(5, Math.round(((1 - gate.factor) * 100) / 5) * 5);
     notes.push(
-      `Yesterday's checks were ${Math.round(gate.accuracy * 100)}% word perfect, so today has half the new lines and more time for what you know.`,
+      `Your last ${gate.total} checks had ${gate.passes} word perfect, where your forgetting curve expected about ${Math.round(gate.expected)}. So today has about ${fewer}% fewer new lines, and more time for what you know.`,
     );
   }
   if (fit.n >= 50 && k >= 1.25) notes.push('Your lines are lasting longer than expected, so checks are spaced further apart.');
   if (fit.n >= 50 && k <= 0.8) notes.push('Your lines are slipping a little sooner than expected, so checks come round sooner.');
   if (phase === 'learning' && allLearned) notes.push('Every line is learned, ahead of plan. From now on it is checks and runs.');
+  if (phase === 'final') notes.push('Final days: every learned line every day, whole scenes from the top, the weakest first.');
   if (phase === 'final' && newRemaining > 0) notes.push(`${num(newRemaining)} words are still new. They come in between the runs today.`);
-  if (today === addDays(settings.deadline, -1)) notes.push('Today, do at least one whole run in Type or Say mode. It is the precise check.');
+  if (today === addDays(settings.deadline, -1) || today === addDays(settings.showDay, -1)) notes.push('Today, do at least one whole run in Type or Say mode. It is the precise check.');
   if (phase === 'deadline') notes.push('Off script day. One run of the whole play today, and Walk is ideal.');
+  if (phase === 'show') notes.push('Show week. Short checks keep every line at its peak; anything missed comes first next time.');
   const lastActive = model.items.reduce((d, it) => {
     const l = getState(it.id).lastDay;
     return l && l > d ? l : d;

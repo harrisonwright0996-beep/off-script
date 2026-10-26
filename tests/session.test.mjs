@@ -126,7 +126,10 @@ test('a beat is taught line by line, then run three times, first with the first 
   for (const id of b1.itemIds) assert.equal(app.getState(id).status, 'review');
   const kinds = (id) => log.filter((l) => l.endsWith(`:${id}`) && /^(new|beat):/.test(l)).map((l) => l.split(':').slice(0, 2).join(':'));
   for (const it of app.model.items) assert.deepEqual(kinds(it.id), ['new:test', 'new:front', 'new:help', 'beat:help', 'beat:floor', 'beat:floor'], 'every line: test, read, first letters, then a run with them and two without');
-  assert.ok(log.includes(`due:help:${first(b1)}`), 'and the first line learned comes back when the curve says it is due, with the first letters first');
+  assert.ok(!log.some((l) => /^(due|run):/.test(l)), 'nothing learned comes back as a check within the hour');
+  app.wait(90);
+  const later = play(app, start(app, { scope: 'tests' }));
+  assert.ok(later.some((l) => /^(due|run):help:/.test(l) && l.endsWith(`:${first(b1)}`)), 'an hour or so on, the first line learned comes back, with the first letters first');
 });
 
 test('a miss shows the right line and moves on; it comes back after three other answers with the first letters, then without', () => {
@@ -166,18 +169,22 @@ test('a go with the first letters missed comes back with the first letters again
   assert.deepEqual(log.filter((l) => l.endsWith(x)), [`due:help:${x}`, `again:help:${x}`, `again:floor:${x}`]);
 });
 
-test('the forgetting curve decides the first go: a newer line due now gets the first letters, a secure one is from the cue alone', () => {
+test('the forgetting curve decides the first go: due on time, from the cue alone, newer or secure; below 80% now, the first letters first', () => {
   const app = fakeApp();
   const newer = app.model.beats[1].itemIds[0];
   const secure = app.model.beats[3].itemIds[2];
-  learn(app, [newer], { stability: 1, hoursAgo: 3 }); // 77% now: below 95%
-  learn(app, [secure], { stability: 1, hoursAgo: 1.5, ...SECURE }); // 86% now: above 80%
+  const slipping = app.model.beats[3].itemIds[4];
+  learn(app, [newer], { stability: 1, hoursAgo: 1.5 }); // 86% now: due, and above 80%
+  learn(app, [secure], { stability: 1, hoursAgo: 1.5, ...SECURE }); // the same for a secure line
+  learn(app, [slipping], { stability: 1, hoursAgo: 3 }); // 77% now: below 80%
   const log = play(app, start(app, { scope: 'tests' }));
-  assert.deepEqual(log.filter((l) => l.endsWith(newer)), [`due:help:${newer}`, `again:floor:${newer}`]);
+  assert.deepEqual(log.filter((l) => l.endsWith(newer)), [`due:floor:${newer}`]);
   assert.deepEqual(log.filter((l) => l.endsWith(secure)), [`due:floor:${secure}`]);
-  const ev = app.events.filter((e) => e.id === newer);
+  assert.deepEqual(log.filter((l) => l.endsWith(slipping)), [`due:help:${slipping}`, `again:floor:${slipping}`]);
+  const ev = app.events.filter((e) => e.id === slipping);
   assert.deepEqual(ev.map((e) => [!!e.help, !!e.primed]), [[true, false], [false, true]], 'the go after the first letters is marked, so the fit leaves it out');
-  assert.ok(app.getState(newer).stability > 1, 'right from the cue alone: its memory grows');
+  assert.ok(app.getState(slipping).stability > 1, 'right from the cue alone: its memory grows');
+  assert.ok(app.getState(newer).stability > app.getState(slipping).stability, 'a check from the cue alone grows it more');
 });
 
 test('and the other way round: a newer line said minutes ago needs no help; a secure line left too long gets the first letters', () => {
@@ -221,7 +228,7 @@ test('older lines are checked in between new beats: six at a time, the most at r
   const before = log.slice(0, firstNew);
   assert.deepEqual(before.filter((l) => l.startsWith('due:')), [...ready].reverse().slice(0, 6).map((id) => `due:help:${id}`));
   assert.ok(before.some((l) => l.startsWith('again:floor:')), 'the first ones come back without help in between');
-  const seventh = log.indexOf(`due:help:${ready[0]}`);
+  const seventh = log.indexOf(`due:floor:${ready[0]}`); // 82% now: from the cue alone
   assert.ok(seventh > firstNew && log.slice(firstNew, seventh).some((l) => l.startsWith('beat:')), 'the seventh waits until the new beat has had its run');
   for (const id of ready) assert.equal(app.getState(id).lastResult, 'pass');
 });
@@ -236,7 +243,7 @@ test('a new line comes back on its own later the same day, then less often', () 
   assert.ok(app.plan().tests.length > 0, 'an hour later the new lines are ready again');
   const before = b0.map((id) => app.getState(id).stability);
   play(app, start(app, { scope: 'tests' }));
-  b0.forEach((id, i) => assert.ok(app.getState(id).stability > 2 * before[i], 'after that check they last much longer'));
+  b0.forEach((id, i) => assert.ok(app.getState(id).stability > 1.5 * before[i], 'after that check they last longer'));
   assert.ok(app.events.filter((e) => e.id === b0[1] && !e.help).length >= 3, 'recalled from the cue alone at least three times on its first day');
 });
 
@@ -278,10 +285,10 @@ test('a sprint picked up hours later: lines right earlier come back when the cur
   const s = start(app, { scope: 'tests' });
   play(app, s);
   assert.equal(s.advance(), null, 'all done for now');
-  app.wait(6 * 60);
+  app.wait(12 * 60);
   const again = start(app, { scope: 'tests', saved: s.save() });
   const log = play(app, again);
-  assert.deepEqual(log.slice(0, 6), ids.map((id) => `run:help:${id}`), 'due again, and newer, so the first letters first');
+  assert.deepEqual(log.slice(0, 6), ids.map((id) => `run:help:${id}`), 'due again, and below 80% now, so the first letters first');
 });
 
 test('undo restores the card, the item state and what the sprint owes', () => {

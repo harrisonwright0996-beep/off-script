@@ -4,7 +4,7 @@
 // Every line the sprint shows needs one go right from the cue alone before the sprint is over; only that
 // counts as right. Its first go is with the first letters while the line is new to him (right from the
 // cue alone fewer than three times), when it was missed last time, or when his forgetting curve says he
-// may not manage without (below 95% for a newer line, below 80% once it is secure). A new line has the
+// may not manage without (a chance of recall now below 80%). A new line has the
 // first letters again before it is first asked without them: taught (read, then said from the first
 // letters) or right at its first try, its next go is with the first letters too. A miss shows the right
 // line and moves on: the line comes back after at least three other answers, with the first letters,
@@ -16,7 +16,7 @@
 // At time up nothing new comes: the sprint carries on until every line it has shown is right without help.
 // The session never saves anything itself: answer() returns the event and new state for the app to
 // save, and advance() then picks the next card using the app's up to date states and plan.
-import { applyHelp, applyResult, isSecure, needsTeaching } from './state.js';
+import { applyHelp, applyResult, needsTeaching } from './state.js';
 import { recallNow } from './memory.js';
 import { speakerChoices } from './items.js';
 import { beatStage, testsOf, REVIEW_BURST, RUN_MIN } from './plan.js';
@@ -29,12 +29,15 @@ export const AGAIN_MESSAGE = 'Lines come back later in the sprint until they are
 export const CLOSING_MESSAGE = "Time's up. Just the lines still to finish, then you're done.";
 
 export const GAP = 3; // other answers before a line comes back
-// First letters first when the chance of recall now is below this (a newer line: not yet right on three
-// separate days since it was learned).
-export const HELP_BELOW = { newer: 0.95, secure: 0.8 };
+// First letters first when the chance of recall now is below this. A line falls due at 90%, so a check
+// on time is from the cue alone: the go that builds memory, and the one the curve learns from.
+export const HELP_BELOW = 0.8;
 // Right from the cue alone fewer times than this: the first letters first, whatever the curve says.
 export const EARLY = 3;
 const VERSION = 2; // of the saved sprint: one saved by the first version is not carried on
+
+// Left to Off Script, whether a line already started has its first go with the first letters.
+export const helpFirst = (s, now, k = 1) => s.passes < EARLY || s.lastResult !== 'pass' || recallNow(s, now, k) < HELP_BELOW;
 
 const FRONT_PROMPTS = [
   'Say it aloud, meaning it.',
@@ -102,9 +105,8 @@ export function createSession({ model, index, getPlan, getState, settings, scope
     if (mode === 'read') return 'read';
     if (mode === 'letters') return 'help';
     if (s.status === 'new') return 'clean'; // never practised: try it from the cue first
-    if (s.passes < EARLY || s.lastResult !== 'pass') return 'help';
     const { now: at, k } = plan();
-    return recallNow(s, at, k) < HELP_BELOW[isSecure(s) ? 'secure' : 'newer'] ? 'help' : 'clean';
+    return helpFirst(s, at, k) ? 'help' : 'clean';
   }
 
   // The go a line needs after a miss: the first letters, or reading it first if it has never been right.

@@ -71,7 +71,7 @@ export async function showChoose(ctx) {
   function update(say = false) {
     const ids = lines();
     const words = ids.reduce((n, id) => n + ctx.index.byId.get(id).words, 0);
-    const mins = practiceMinutes({ index: ctx.index, getState: ctx.getState, itemIds: ids, help: pick.help, pace });
+    const mins = practiceMinutes({ index: ctx.index, getState: ctx.getState, itemIds: ids, help: pick.help, pace, k: ctx.fit.k });
     summary.textContent = ids.length
       ? `${plural(ids.length, 'line')}, ${plural(words, 'word')}: about ${duration(mins)} ${pace.measured ? 'at your pace' : 'at a typical pace'}.`
       : 'No lines match these choices. Try Every line.';

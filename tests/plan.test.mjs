@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { fakeApp, learn } from './helpers.mjs';
-import { phaseOf, recallGate, dayOrder, beatStage, untilText, paceOf } from '../src/plan.js';
+import { phaseOf, recallGate, dayOrder, beatStage, untilText, paceOf, buildPlan, FRONT_LOAD } from '../src/plan.js';
 import { DEFAULT_SETTINGS } from '../src/settings.js';
 import { newState } from '../src/state.js';
 import { HOUR } from '../src/memory.js';
@@ -18,13 +18,19 @@ test('phases follow the dates', () => {
   assert.equal(phaseOf('2026-11-03', s), 'final');
   assert.equal(phaseOf('2026-11-04', s), 'deadline');
   assert.equal(phaseOf('2026-11-05', s), 'maintenance');
+  assert.equal(phaseOf('2026-12-10', s), 'maintenance');
+  assert.equal(phaseOf('2026-12-11', s), 'final', 'the three days before show week are final days again');
+  assert.equal(phaseOf('2026-12-13', s), 'final');
+  assert.equal(phaseOf('2026-12-14', s), 'show');
+  assert.equal(phaseOf('2026-12-20', s), 'show');
+  assert.equal(phaseOf('2026-12-21', s), 'maintenance');
 });
 
-test('quota spreads the new words over the days left, inclusive', () => {
+test('quota: a little more than an even spread of the new words over the days left, all of it on the last day', () => {
   const app = fakeApp(); // 26 Oct to 1 Nov is 7 days
   const plan = app.plan();
-  assert.equal(plan.quota, Math.ceil(143 / 7));
-  assert.equal(plan.newBeats.length, 1, 'one beat covers the quota');
+  assert.equal(FRONT_LOAD, 1.25);
+  assert.equal(plan.quota, Math.ceil((143 * 1.25) / 7));
   assert.deepEqual([plan.tests.length, plan.done], [0, false]);
   app.setDay('2026-11-01');
   assert.equal(app.plan().quota, 143, 'last new day: everything left');
@@ -35,7 +41,7 @@ test('missed days rebalance quietly: the quota grows, a neutral note, no blame',
   learn(app, beatIds(app, 0), { hoursAgo: 0 });
   app.setDay('2026-10-30');
   const plan = app.plan();
-  assert.equal(plan.quota, Math.ceil((143 - app.model.beats[0].words) / 3));
+  assert.equal(plan.quota, Math.ceil(((143 - app.model.beats[0].words) * 1.25) / 3));
   assert.ok(plan.notes.includes('Welcome back. The plan has been rebalanced around today.'));
 });
 
@@ -51,16 +57,52 @@ test('Learn this scene next puts that scene first', () => {
   assert.equal(app.index.beatById.get(app.plan().newBeats[0]).scene, 3);
 });
 
-test('the gate halves new lines when yesterday’s checks were under 85% word perfect', () => {
-  const app = fakeApp();
-  const prev = { status: 'review' };
-  for (let i = 0; i < 20; i++) app.events.push({ day: '2026-10-25', queue: i % 2 ? 'run' : 'due', pass: i >= 4, id: 'x' + i, prev });
-  assert.deepEqual(recallGate(app.events, '2026-10-25'), { total: 20, accuracy: 0.8, halved: true });
-  const plan = app.plan();
-  assert.equal(plan.quota, Math.ceil(Math.ceil(143 / 7) / 2));
-  assert.match(plan.notes[0], /^Yesterday's checks were 80% word perfect/);
-  assert.equal(recallGate([{ day: 'd', pass: false, prev }], 'd').halved, false, 'needs at least 20 checks');
-  assert.equal(recallGate(app.events.map((e) => ({ ...e, prev: { status: 'learning' } })), '2026-10-25').total, 0, 'only lines already learned count');
+// Checks of learned lines yesterday, each made when the curve expected 90%.
+function checks(app, n, passes, extra = {}) {
+  const t0 = app.clock - 30 * HOUR;
+  for (let i = 0; i < n; i++) {
+    const time = t0 + i * 60000;
+    app.events.push({ time, day: '2026-10-25', id: 'x' + (i % 20), queue: i % 2 ? 'run' : 'due', mode: 'type', pass: i < passes, prev: { status: 'review', stability: 24, lastTime: time - 24 * HOUR }, ...extra });
+  }
+}
+
+test('the gate: recent checks against what the curve expected; a few points short is bad luck, more cuts new lines gently, at most by half', () => {
+  const even = Math.ceil((143 * 1.25) / 7);
+  // The plan with the curve as it stands (his personal factor not yet moved).
+  const planOf = (app) => buildPlan({ model: app.model, index: app.index, getState: app.getState, events: app.events, settings: app.settings, today: app.today, now: app.clock, fit: { k: 1, n: 0 } });
+  let app = fakeApp();
+  checks(app, 100, 88);
+  let gate = recallGate(app.events, { k: 1 });
+  assert.deepEqual([gate.total, gate.passes, Math.round(gate.expected), gate.factor], [100, 88, 90, 1], '2 points short: nothing changes');
+  assert.equal(planOf(app).quota, even);
+  assert.equal(planOf(app).notes.length, 0);
+
+  app = fakeApp();
+  checks(app, 100, 82);
+  gate = recallGate(app.events, { k: 1 });
+  assert.ok(Math.abs(gate.factor - 0.75) < 1e-9, '8 points short: a quarter less');
+  const plan = planOf(app);
+  assert.equal(plan.quota, Math.ceil(even * gate.factor));
+  assert.equal(plan.notes[0], 'Your last 100 checks had 82 word perfect, where your forgetting curve expected about 90. So today has about 25% fewer new lines, and more time for what you know.');
+  const fitted = app.plan();
+  assert.equal(fitted.quota, even, 'once his curve is fitted to the same checks it expects fewer, so nothing is cut');
+  assert.ok(fitted.notes.includes('Your lines are slipping a little sooner than expected, so checks come round sooner.'), 'checks come sooner instead');
+
+  app = fakeApp();
+  checks(app, 100, 60);
+  assert.equal(recallGate(app.events, { k: 1 }).factor, 0.5, 'never less than half');
+
+  app = fakeApp();
+  checks(app, 39, 20);
+  assert.equal(recallGate(app.events, { k: 1 }).factor, 1, 'needs at least 40 checks');
+
+  app = fakeApp();
+  checks(app, 100, 60, { mode: 'walk' });
+  assert.equal(recallGate(app.events, { k: 1 }).total, 0, 'walks are left out: marked from memory afterwards');
+  checks(app, 100, 60, { prev: { status: 'learning', stability: 1, lastTime: app.clock - HOUR } });
+  assert.equal(recallGate(app.events, { k: 1 }).total, 0, 'only lines already learned count');
+  checks(app, 100, 60);
+  assert.equal(recallGate(app.events, { before: app.clock - 40 * HOUR, k: 1 }).total, 0, 'only checks before today count');
 });
 
 test('a learned line is ready once its chance of recall falls to 90%, a scene opening at 95%', () => {
@@ -132,7 +174,7 @@ test('while learning, nothing goes more than three days untested, however strong
   assert.deepEqual(app.plan().due, [id]);
 });
 
-test('final days: every line every day, the whole play in order from the top of each scene', () => {
+test('final days: every line every day, whole scenes from the top, the weakest scene first', () => {
   const app = fakeApp();
   app.setDay('2026-11-03');
   learn(app, allIds(app), { stability: 500, hoursAgo: 20 });
@@ -140,19 +182,46 @@ test('final days: every line every day, the whole play in order from the top of 
   assert.equal(plan.phase, 'final');
   assert.deepEqual(plan.runs.map((r) => r.scene), [0, 1, 3]);
   assert.deepEqual(plan.runs[1].itemIds, sceneIds(app, 1));
+  assert.ok(plan.notes.includes('Final days: every learned line every day, whole scenes from the top, the weakest first.'));
   assert.ok(plan.notes.includes('Today, do at least one whole run in Type or Say mode. It is the precise check.'));
   assert.equal(plan.newBeats.length, 0);
+  learn(app, [sceneIds(app, 3)[2]], { stability: 30, hoursAgo: 20 }); // one weaker line in Scene 3
+  learn(app, [sceneIds(app, 1)[5]], { stability: 100, hoursAgo: 20 }); // and a slightly weaker one in Scene 1
+  assert.deepEqual(app.plan().runs.map((r) => r.scene), [3, 1, 0], 'the scene with the weakest line first');
+  learn(app, [sceneIds(app, 0)[1]], { stability: 500, hoursAgo: 20, lastResult: 'miss' });
+  assert.deepEqual(app.plan().runs.map((r) => r.scene), [0, 3, 1], 'a scene with a miss before them all');
   learn(app, allIds(app), { stability: 500, hoursAgo: 1 });
   assert.equal(app.plan().tests.length, 0, 'once run today, done until tomorrow');
 });
 
-test('after off script day, strong lines can go up to three weeks', () => {
+test('December: the three days before show week are final days again, then show week checks every three days at most', () => {
+  const app = fakeApp();
+  app.setDay('2026-12-11');
+  learn(app, allIds(app), { stability: 2000, hoursAgo: 20 });
+  let plan = app.plan();
+  assert.equal(plan.phase, 'final');
+  assert.equal(plan.runs.length, 3, 'every scene run whole, however strong');
+  assert.ok(!plan.notes.includes('Today, do at least one whole run in Type or Say mode. It is the precise check.'));
+  app.setDay('2026-12-13');
+  learn(app, allIds(app), { stability: 2000, hoursAgo: 20 });
+  assert.ok(app.plan().notes.includes('Today, do at least one whole run in Type or Say mode. It is the precise check.'), 'the day before show week');
+  app.setDay('2026-12-16');
+  learn(app, allIds(app), { stability: 2000, hoursAgo: 24 * 2 });
+  plan = app.plan();
+  assert.equal(plan.phase, 'show');
+  assert.equal(plan.tests.length, 0);
+  assert.ok(plan.notes.includes('Show week. Short checks keep every line at its peak; anything missed comes first next time.'));
+  learn(app, allIds(app), { stability: 2000, hoursAgo: 24 * 3 });
+  assert.equal(app.plan().runs.length, 3, 'three days untested: checked again');
+});
+
+test('after off script day, strong lines can go up to two weeks', () => {
   const app = fakeApp();
   app.setDay('2026-11-20');
-  learn(app, allIds(app), { stability: 2000, hoursAgo: 24 * 10 });
+  learn(app, allIds(app), { stability: 2000, hoursAgo: 24 * 13 });
   assert.equal(app.plan().phase, 'maintenance');
   assert.equal(app.plan().tests.length, 0);
-  learn(app, allIds(app), { stability: 2000, hoursAgo: 24 * 21 });
+  learn(app, allIds(app), { stability: 2000, hoursAgo: 24 * 14 });
   assert.equal(app.plan().runs.length, 3);
 });
 
@@ -170,7 +239,7 @@ test('when his lines last longer than expected, checks spread out, and the plan 
 test('forecast, estimate and the next check are plain and kind', () => {
   const app = fakeApp();
   const plan = app.plan();
-  assert.match(plan.forecast, /^To start every scene by Sunday, aim for about 21 new words a day: about \d+ minutes at a typical pace\.$/);
+  assert.match(plan.forecast, /^To start every scene by Sunday, aim for about 26 new words today: about \d+ minutes at a typical pace\.$/);
   assert.ok(plan.estimate.low >= 5 && plan.estimate.high >= plan.estimate.low);
   learn(app, allIds(app), { stability: 48, hoursAgo: 1 });
   const after = app.plan();
@@ -215,7 +284,7 @@ test('the plan says which lines are ready, for the sprint to choose from', () =>
 
 test('goes with the first letters: their time counts, but only one outcome per check', () => {
   const app = fakeApp();
-  const review = { status: 'review' };
+  const review = { status: 'review', stability: 24, lastTime: app.clock - 24 * HOUR };
   const events = [];
   const add = (extra) => events.push({ time: app.clock + events.length * 10000, day: app.today, id: app.model.items[events.length % 20].id, queue: 'due', mode: 'say', prev: review, pass: true, ...extra });
   for (let i = 0; i < 10; i++) {
@@ -225,8 +294,8 @@ test('goes with the first letters: their time counts, but only one outcome per c
   add({ help: true, pass: false }); // missed even with the first letters: a check, missed
   add({ relearn: true, help: true });
   add({ relearn: true });
-  const gate = recallGate(events, app.today);
-  assert.deepEqual([gate.total, gate.accuracy], [11, 8 / 11], 'help passes and relearning left out; a help miss counts');
+  const gate = recallGate(events);
+  assert.deepEqual([gate.total, gate.passes], [11, 8], 'help passes and relearning left out; a help miss counts');
   const pace = paceOf(events, app.today, app.index.byId);
   assert.equal(pace.dueSecPerItem, (20 + 22 * 10) / 11, 'every go takes its time (20 seconds for the first, 10 for each after); 11 checks');
 });
