@@ -62,20 +62,20 @@ test('a new line taught: read it, say it from the first letters, then on to the 
   const rec = answer(app, s, true);
   assert.equal(rec.event.help, true);
   assert.deepEqual([rec.state.status, rec.state.passes, rec.state.helped, rec.state.stability], ['learning', 0, 1, null], 'right with the first letters counts for nothing yet');
-  assert.deepEqual([rec.need, rec.help, rec.later], ['clean', true, true], 'it comes back later, without the first letters');
+  assert.deepEqual([rec.need, rec.help, rec.later], ['help', true, true], 'it comes back later with the first letters once more, then without');
   const c = s.advance();
   assert.deepEqual([c.item.id, c.step], [second, 'test']);
   assert.deepEqual(s.stats, { answered: 0, perfect: 0, learnedItems: 0, learnedWords: 0 }, 'only goes from the cue alone are counted');
 });
 
-test('Try it: right needs no first letters; missed, the line is read, then said from the first letters', () => {
+test('Try it: right, its next go is still with the first letters; missed, the line is read, then said from the first letters', () => {
   const app = fakeApp();
   const s = start(app);
   const [, second, third] = app.model.beats[0].itemIds;
   s.advance();
   assert.equal(s.choose('try').step, 'floor');
   let rec = answer(app, s, true);
-  assert.deepEqual([rec.need, rec.state.passes], ['done', 1]);
+  assert.deepEqual([rec.need, rec.state.passes, rec.later], ['help', 1, true], 'right at the first try: the first letters next time all the same');
   let c = s.advance();
   assert.deepEqual([c.item.id, c.step], [second, 'test']);
   s.choose('try');
@@ -112,20 +112,20 @@ test('two misses in the first three tries switch the beat to teaching first', ()
   assert.deepEqual([card.item.id, card.step, card.message], [beat.itemIds[2], 'front', undefined]);
 });
 
-test('a beat is taught line by line, then run twice with another beat taught in between, and its lines are learned', () => {
+test('a beat is taught line by line, then run three times, first with the first letters, other beats taught in between, and its lines are learned', () => {
   const app = fakeApp({ settings: { lastNewDay: '2026-10-26' } }); // everything is new today
   const log = play(app, start(app), { onTest: 'teach' });
   const [b1, b2] = app.model.beats;
   const first = (b) => b.itemIds[0];
   assert.deepEqual(log.slice(0, 12), b1.itemIds.flatMap((id) => [`new:test:${id}`, `new:front:${id}`, `new:help:${id}`]));
-  assert.deepEqual(log.slice(12, 16), b1.itemIds.map((id) => `beat:floor:${id}`), 'the beat run is from the cue alone');
-  const runStarts = log.map((l, i) => [l, i]).filter(([l]) => l.startsWith('beat:floor:') && (l.endsWith(first(b1)) || l.endsWith(first(b2))));
-  assert.deepEqual(runStarts.slice(0, 4).map(([l]) => l.split(':')[2]), [first(b1), first(b1), first(b2), first(b2)]);
+  assert.deepEqual(log.slice(12, 16), b1.itemIds.map((id) => `beat:help:${id}`), 'the first beat run is with the first letters again');
+  const runs = (b) => log.map((l, i) => [l, i]).filter(([l]) => l.startsWith('beat:') && l.endsWith(`:${first(b)}`));
+  assert.deepEqual(runs(b1).map(([l]) => l.split(':')[1]), ['help', 'floor', 'floor'], 'then twice from the cue alone');
   const b2At = log.indexOf(`new:test:${first(b2)}`);
-  assert.ok(runStarts[0][1] < b2At && b2At < runStarts[1][1], 'the second run of beat 1 comes after teaching beat 2');
+  assert.ok(runs(b1)[0][1] < b2At && b2At < runs(b1)[1][1], 'the second run of beat 1 comes after teaching beat 2');
   for (const id of b1.itemIds) assert.equal(app.getState(id).status, 'review');
   const kinds = (id) => log.filter((l) => l.endsWith(`:${id}`) && /^(new|beat):/.test(l)).map((l) => l.split(':').slice(0, 2).join(':'));
-  for (const it of app.model.items) assert.deepEqual(kinds(it.id), ['new:test', 'new:front', 'new:help', 'beat:floor', 'beat:floor'], 'every line: test, read, first letters, two runs');
+  for (const it of app.model.items) assert.deepEqual(kinds(it.id), ['new:test', 'new:front', 'new:help', 'beat:help', 'beat:floor', 'beat:floor'], 'every line: test, read, first letters, then a run with them and two without');
   assert.ok(log.includes(`due:help:${first(b1)}`), 'and the first line learned comes back when the curve says it is due, with the first letters first');
 });
 
@@ -247,11 +247,13 @@ test('time up: nothing new comes; what the sprint has shown is finished, then it
   s.advance();
   s.choose('teach');
   s.choose('next');
-  answer(app, s, true); // right with the first letters: it still needs a go without
+  answer(app, s, true); // taught: it still needs the first letters once more, then a go without
   s.close();
   assert.equal(s.closing, true);
   const c = s.advance();
-  assert.deepEqual([where(c), c.message], [`again:floor:${first}`, CLOSING_MESSAGE], 'nothing else to put in between, so it comes now');
+  assert.deepEqual([where(c), c.message], [`again:help:${first}`, CLOSING_MESSAGE], 'nothing else to put in between, so it comes now');
+  answer(app, s, true);
+  assert.equal(where(s.advance()), `again:floor:${first}`);
   answer(app, s, true);
   assert.equal(s.advance(), null);
   s.finish();
@@ -342,13 +344,16 @@ test('Run this scene: one run over its lines, misses flow on and come back later
   assert.deepEqual(log.slice(ids.length), [...ids.map((id) => `run:help:${id}`), ...ids.map((id) => `run:floor:${id}`)], 'every miss back as a run, then without help');
 });
 
-test('Try a run of a scene not yet learned: from the cue alone; a miss comes back to read, then first letters, then without', () => {
+test('Try a run of a scene not yet learned: from the cue alone; right, a line comes back with the first letters, then without; missed, to read first', () => {
   const app = fakeApp();
   const ids = app.model.scenes[3].itemIds;
   const log = play(app, start(app, { custom: { scene: 3, itemIds: ids } }), { decide: missFirst([ids[2]]) });
   assert.deepEqual(log.slice(0, 6), ids.map((id) => `run:floor:${id}`));
-  assert.deepEqual(log.filter((l) => l.endsWith(ids[2])), [`run:floor:${ids[2]}`, `again:front:${ids[2]}`, `again:help:${ids[2]}`, `again:floor:${ids[2]}`]);
-  assert.equal(app.getState(ids[5]).stability, 4, 'right before being taught: known');
+  const goes = (id) => log.filter((l) => l.endsWith(`:${id}`)).map((l) => l.split(':').slice(0, 2).join(':'));
+  assert.deepEqual(goes(ids[2]), ['run:floor', 'again:front', 'again:help', 'again:help', 'again:floor']);
+  for (const id of ids.filter((x) => x !== ids[2])) assert.deepEqual(goes(id), ['run:floor', 'again:help', 'again:floor']);
+  const [, second] = app.events.filter((e) => e.id === ids[5]);
+  assert.equal(second.prev.stability, 4, 'right before being taught: known');
 });
 
 test('chosen practice: lines from several scenes, as runs where they follow on, with the help he chooses', () => {

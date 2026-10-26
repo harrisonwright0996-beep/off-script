@@ -36,12 +36,13 @@ export function statsLine(st) {
 
 const minus = (a, b) => Object.fromEntries(Object.keys(a).map((k) => [k, a[k] - (b[k] || 0)]));
 
-// After an answer that leaves a line still to finish: what happens to it next.
-function comesBack(rec, pass) {
-  if (!rec.later) return null;
-  if (pass) return 'It comes back later without the first letters.';
-  return { help: 'It comes back later, with the first letters first.', read: 'It comes back later, to read first.' }[rec.need] || 'It comes back later.';
-}
+// After an answer that leaves a line still to finish: how it comes back.
+const COMES_BACK = {
+  help: 'It comes back later with the first letters, then without.',
+  clean: 'It comes back later without the first letters.',
+  read: 'It comes back later to read first.',
+};
+const comesBack = (rec) => (rec.later ? COMES_BACK[rec.need] : null);
 
 // scope: 'all' or 'tests' (Just 2 minutes). minutes: the sprint length (settings by default).
 // custom: { scene, itemIds } for Run this scene. extra: 'new' or 'runs' to keep going after the plan.
@@ -284,7 +285,7 @@ export async function showSprint(ctx, { scope = 'all', minutes = null, custom = 
     undo.push(rec);
     await saveSprint();
     const text = rec.help && result.pass ? 'Right with the first letters' : describeResult(result, c.item.tokens, c.item.speaker);
-    const note = comesBack(rec, result.pass);
+    const note = comesBack(rec);
     announce(note ? `${text}. ${note}` : text);
     feedback(c, result, text, note);
   }

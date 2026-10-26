@@ -14,7 +14,7 @@ const WHICH = [
   ['all', 'Every line', 'Every line, started or not.'],
 ];
 const HELP = [
-  ['auto', 'Let Off Script choose', 'From your forgetting curve: the first letters first when you may not manage without them.'],
+  ['auto', 'Let Off Script choose', 'The first letters first while a line is new, after a miss, or when your forgetting curve says you may need them.'],
   ['none', 'No help', 'Every line from the cue alone, misses too.'],
   ['letters', 'First letters first', 'Every line with the first letters, then later without.'],
   ['read', 'Read it first', 'Read each line, say it from the first letters, then later without.'],

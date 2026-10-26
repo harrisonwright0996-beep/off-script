@@ -2,10 +2,13 @@
 // Cards: 'test' (cue, then Try it or Teach me), 'front' (the full line, to read), 'help' (the first
 // letters: said aloud, revealed, any word missed tapped), 'floor' (from the cue alone, answered and checked).
 // Every line the sprint shows needs one go right from the cue alone before the sprint is over; only that
-// counts as right. Its first go is with the first letters when his forgetting curve says he may not
-// manage without (below 95% for a newer line, below 80% once it is secure), when it was missed last time
-// or has never been right without them. A miss shows the right line and moves on: the line comes back
-// after at least three other answers, with the first letters, then once more without them.
+// counts as right. Its first go is with the first letters while the line is new to him (right from the
+// cue alone fewer than three times), when it was missed last time, or when his forgetting curve says he
+// may not manage without (below 95% for a newer line, below 80% once it is secure). A new line has the
+// first letters again before it is first asked without them: taught (read, then said from the first
+// letters) or right at its first try, its next go is with the first letters too. A miss shows the right
+// line and moves on: the line comes back after at least three other answers, with the first letters,
+// then once more without them.
 // New lines come in rounds: teach a beat's lines (each read, then said from the first letters), then run
 // the beats resting from the round before and the new beat. Between rounds come the lines still owed a
 // go, then tests of what is already learned, up to six at a time and the most at risk first, so older
@@ -29,6 +32,8 @@ export const GAP = 3; // other answers before a line comes back
 // First letters first when the chance of recall now is below this (a newer line: not yet right on three
 // separate days since it was learned).
 export const HELP_BELOW = { newer: 0.95, secure: 0.8 };
+// Right from the cue alone fewer times than this: the first letters first, whatever the curve says.
+export const EARLY = 3;
 const VERSION = 2; // of the saved sprint: one saved by the first version is not carried on
 
 const FRONT_PROMPTS = [
@@ -97,7 +102,7 @@ export function createSession({ model, index, getPlan, getState, settings, scope
     if (mode === 'read') return 'read';
     if (mode === 'letters') return 'help';
     if (s.status === 'new') return 'clean'; // never practised: try it from the cue first
-    if (s.lastResult !== 'pass' || s.stability == null) return 'help';
+    if (s.passes < EARLY || s.lastResult !== 'pass') return 'help';
     const { now: at, k } = plan();
     return recallNow(s, at, k) < HELP_BELOW[isSecure(s) ? 'secure' : 'newer'] ? 'help' : 'clean';
   }
@@ -359,7 +364,10 @@ export function createSession({ model, index, getPlan, getState, settings, scope
       line.last = S.goes;
       if (result.pass) {
         if (help) line.helped = true;
-        line.need = help ? 'clean' : 'done';
+        // A new line has the first letters once more before it goes without: after its first go right
+        // with them, or when it was right at its very first try.
+        const again = helpMode() !== 'none' && (help ? prev.passes === 0 && !prev.helped : prev.status === 'new');
+        line.need = again ? 'help' : help ? 'clean' : 'done';
       } else {
         line.missed = true;
         line.need = missNeed(prev);

@@ -46,7 +46,7 @@ for (const theme of ['cream', 'light', 'dark']) {
     await page.getByRole('button', { name: 'Reveal' }).click();
     await check(page, 'card: first letters revealed', found);
     await page.getByRole('button', { name: 'Done' }).click();
-    await expect(page.getByText('It comes back later without the first letters.')).toBeVisible();
+    await expect(page.getByText('It comes back later with the first letters, then without.')).toBeVisible();
     await check(page, 'card: first letters result', found);
     await page.getByRole('button', { name: 'Next', exact: true }).click();
     await page.getByRole('button', { name: 'Try it' }).click();
