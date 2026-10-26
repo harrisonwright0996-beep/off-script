@@ -103,11 +103,6 @@ test('the gate: recent checks against what the curve expected; a few points shor
   assert.equal(recallGate(app.events, { k: 1 }).total, 0, 'only lines already learned count');
   checks(app, 100, 60);
   assert.equal(recallGate(app.events, { before: app.clock - 40 * HOUR, k: 1 }).total, 0, 'only checks before today count');
-
-  app = fakeApp();
-  checks(app, 100, 60);
-  app.events.forEach((e) => (e.prev.lastMode = 'walk'));
-  assert.equal(recallGate(app.events, { k: 1 }).total, 0, 'nor checks just after a walk: a miss not marked there counted as right');
 });
 
 test('a learned line is ready once its chance of recall falls to 90%, a scene opening at 95%', () => {

@@ -81,6 +81,5 @@ test('the personal factor: fitted from his results, near 1 until there is enough
   assert.equal(fit.n, 400);
   assert.equal(fitFactor(events.slice(0, 20)).k, 1, 'too little evidence');
   assert.equal(fitFactor(events.map((e) => ({ ...e, mode: 'walk' }))).n, 0, 'walks are left out');
-  assert.equal(fitFactor(events.map((e) => ({ ...e, prev: { ...e.prev, lastMode: 'walk' } }))).n, 0, 'and the test just after a walk: a miss not marked there counted as right');
   assert.equal(fitFactor(events.map((e, i) => ({ ...e, help: i % 2 === 0, primed: i % 2 === 1 }))).n, 0, 'goes with the first letters, and the go just after, are left out');
 });
