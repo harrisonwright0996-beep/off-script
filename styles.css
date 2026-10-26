@@ -89,6 +89,7 @@ html {
   font-family: -apple-system, system-ui, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
   -webkit-text-size-adjust: 100%;
   text-size-adjust: 100%;
+  touch-action: manipulation; /* no double tap to zoom anywhere, so quick taps are taps; pinch zoom still works */
 }
 html {
   font: -apple-system-body;
