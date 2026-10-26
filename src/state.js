@@ -5,7 +5,7 @@
 // Its memory: stability in hours (memory.js), lapses (misses since it was first recalled) and when
 // it was last tested. Nothing here says when to test it next: the plan works that out from the
 // forgetting curve whenever the app is open.
-import { FIRST, HOUR, afterMiss, growth, retrievability } from './memory.js';
+import { FIRST, HELPED_GROWTH, HOUR, afterMiss, growth, retrievability } from './memory.js';
 
 export const CRITERION = 2;
 
@@ -31,11 +31,12 @@ export function newState(id) {
 
 const addDay = (days, day) => (days.includes(day) ? days : [...days, day]);
 
-// result: { pass, day, time, mode, k, pretest, relearn }. Returns a new state; the old one is
+// result: { pass, day, time, mode, k, pretest, relearn, primed }. Returns a new state; the old one is
 // untouched (undo keeps it). k: his personal factor. pretest: recalled before being taught.
-// relearn: the check straight after studying the line again, which says little about memory, so it
-// does not grow it.
-export function applyResult(state, { pass, day, time, mode, k = 1, pretest = false, relearn = false }) {
+// relearn: a go after missing the line earlier in the same sprint, which says little about memory, so
+// it does not grow it. primed: from the cue alone just after a go with the first letters, so it grows
+// memory by half as much.
+export function applyResult(state, { pass, day, time, mode, k = 1, pretest = false, relearn = false, primed = false }) {
   const s = { ...state };
   if (s.status === 'new') {
     s.status = 'learning';
@@ -56,7 +57,8 @@ export function applyResult(state, { pass, day, time, mode, k = 1, pretest = fal
     s.stability = afterMiss(state.stability);
   } else if (!relearn) {
     const r = retrievability((time - state.lastTime) / HOUR, k * state.stability);
-    s.stability = state.stability * growth(state.stability, r, state.lapses || 0);
+    const g = growth(state.stability, r, state.lapses || 0);
+    s.stability = state.stability * (primed ? 1 + (g - 1) * HELPED_GROWTH : g);
   }
 
   if (state.status !== 'review' && s.passes >= CRITERION) {

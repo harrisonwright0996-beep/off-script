@@ -317,6 +317,7 @@ export function buildPlan({ model, index, getState, events, settings, today, now
 
   return {
     day: today,
+    now,
     phase,
     k,
     ready,

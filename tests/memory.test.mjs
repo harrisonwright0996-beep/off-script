@@ -54,6 +54,16 @@ test('a miss cuts memory; the check straight after relearning does not grow it',
   assert.equal(recallNow(relearned, relearned.lastTime), 1);
 });
 
+test('right from the cue alone just after the first letters: memory grows by half as much', () => {
+  const t0 = Date.UTC(2026, 9, 26, 9);
+  const s = { ...newState('x'), status: 'review', passes: 2, stability: 10, lastTime: t0, lastResult: 'pass' };
+  const later = { pass: true, day: 'd', time: t0 + 20 * HOUR, mode: 'say' };
+  const free = applyResult(s, later).stability / 10;
+  const helped = applyResult(s, { ...later, primed: true }).stability / 10;
+  assert.ok(free > 2, `free: x${free.toFixed(2)}`);
+  assert.ok(near(helped - 1, (free - 1) / 2), `helped: x${helped.toFixed(2)}`);
+});
+
 test('the personal factor: fitted from his results, near 1 until there is enough evidence', () => {
   // Invented results from someone whose lines last twice as long as the curve expects.
   let seed = 7;
