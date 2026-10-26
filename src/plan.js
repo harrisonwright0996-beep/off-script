@@ -218,6 +218,32 @@ export function paceOf(events, today, byId) {
   };
 }
 
+// How long his right answers take, to tell a slow one (memory.js): the last 100 lines right from the
+// cue alone in each mode, as [words, seconds]. Answers without a time (the app went into the
+// background, or a long break) and slips of the finger are left out.
+export const TIMES_KEPT = 100;
+export function answerTimes(events, byId) {
+  const out = { type: [], say: [] };
+  for (let i = events.length - 1; i >= 0; i--) {
+    if (out.type.length >= TIMES_KEPT && out.say.length >= TIMES_KEPT) break;
+    const e = events[i];
+    const list = out[e.mode];
+    if (!list || list.length >= TIMES_KEPT || !e.pass || e.ms == null || e.help || e.primed || e.relearn || e.slip) continue;
+    const words = byId.get(e.id)?.words;
+    if (words) list.push([words, e.ms / 1000]);
+  }
+  return out;
+}
+
+// His usual time for a line of about this many words (from half to twice as many): the middle one
+// of at least 10 such answers, or null until there are 10.
+export function usualSeconds(times, words) {
+  const secs = times.filter(([w]) => w >= words / 2 && w <= words * 2).map(([, sec]) => sec).sort((a, b) => a - b);
+  if (secs.length < 10) return null;
+  const mid = secs.length >> 1;
+  return secs.length % 2 ? secs[mid] : (secs[mid - 1] + secs[mid]) / 2;
+}
+
 const num = (n) => Math.round(n).toLocaleString('en-GB');
 const round5 = (min) => Math.max(5, Math.round(min / 5) * 5);
 
@@ -365,6 +391,7 @@ export function buildPlan({ model, index, getState, events, settings, today, now
     quota,
     gate,
     pace,
+    times: answerTimes(events, byId),
     estimate,
     forecast,
     notes,

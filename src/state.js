@@ -31,12 +31,12 @@ export function newState(id) {
 
 const addDay = (days, day) => (days.includes(day) ? days : [...days, day]);
 
-// result: { pass, day, time, mode, k, pretest, relearn, primed }. Returns a new state; the old one is
-// untouched (undo keeps it). k: his personal factor. pretest: recalled before being taught.
+// result: { pass, day, time, mode, k, pretest, relearn, primed, slow }. Returns a new state; the old
+// one is untouched (undo keeps it). k: his personal factor. pretest: recalled before being taught.
 // relearn: a go after missing the line earlier in the same sprint, which says little about memory, so
-// it does not grow it. primed: from the cue alone just after a go with the first letters, so it grows
-// memory by half as much.
-export function applyResult(state, { pass, day, time, mode, k = 1, pretest = false, relearn = false, primed = false }) {
+// it does not grow it. primed: from the cue alone just after a go with the first letters, and slow:
+// right but much slower than usual; either grows memory by half as much.
+export function applyResult(state, { pass, day, time, mode, k = 1, pretest = false, relearn = false, primed = false, slow = false }) {
   const s = { ...state };
   if (s.status === 'new') {
     s.status = 'learning';
@@ -58,7 +58,7 @@ export function applyResult(state, { pass, day, time, mode, k = 1, pretest = fal
   } else if (!relearn) {
     const r = retrievability((time - state.lastTime) / HOUR, k * state.stability);
     const g = growth(state.stability, r, state.lapses || 0);
-    s.stability = state.stability * (primed ? 1 + (g - 1) * HELPED_GROWTH : g);
+    s.stability = state.stability * (primed || slow ? 1 + (g - 1) * HELPED_GROWTH : g);
   }
 
   if (state.status !== 'review' && s.passes >= CRITERION) {

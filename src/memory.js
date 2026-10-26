@@ -10,7 +10,8 @@
 // * Recalling it multiplies S: most when it was close to being forgotten (the spacing effect), less
 //   as S gets large, and less for a line that keeps slipping.
 // * Recalling it just after a go with the first letters grows S by half as much: the first letters
-//   did some of the work.
+//   did some of the work. So does recalling it right but more than twice as slowly as his usual for
+//   a line that long: it was hard to find, which says it is weaker than a quick answer would.
 // * Missing it cuts S to between 10 minutes and 2 hours, so it comes back soon.
 // * A personal factor k, fitted to his own results, stretches or shrinks every S: if his lines last
 //   longer than the curve expects, checks spread out; if they slip sooner, checks come round sooner.
@@ -19,6 +20,7 @@ export const TARGET = 0.9; // a line is ready to test when its chance of recall 
 export const OPENING_TARGET = 0.95; // scene openings, which have no line before them to lead in
 export const FIRST = { studied: 1, known: 4 }; // hours: first recalled after teaching, or before it
 export const HELPED_GROWTH = 0.5; // the share of the growth when the first letters came just before
+export const SLOW = 2; // right, but this many times his usual time for a line that long: half the growth
 const F = 19 / 81;
 const MIN_STABILITY = 1 / 6;
 const AFTER_MISS_MAX = 2;

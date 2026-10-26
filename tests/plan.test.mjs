@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { fakeApp, learn } from './helpers.mjs';
-import { phaseOf, recallGate, dayOrder, beatStage, untilText, paceOf, buildPlan, FRONT_LOAD } from '../src/plan.js';
+import { phaseOf, recallGate, dayOrder, beatStage, untilText, paceOf, buildPlan, answerTimes, usualSeconds, FRONT_LOAD } from '../src/plan.js';
 import { DEFAULT_SETTINGS } from '../src/settings.js';
 import { newState } from '../src/state.js';
 import { HOUR } from '../src/memory.js';
@@ -343,4 +343,28 @@ test('a missing show day, or one on or before off script day, changes nothing el
     app.setDay('2026-11-20');
     assert.doesNotThrow(() => app.plan(), String(showDay));
   }
+});
+
+test('his usual answer time: the last 100 lines right from the cue alone in that mode, for lines of about that length', () => {
+  const byId = new Map([['short', { words: 4 }], ['long', { words: 20 }]]);
+  const ev = (id, sec, extra = {}) => ({ id, mode: 'type', pass: true, ms: sec * 1000, ...extra });
+  const left = ['help', 'primed', 'relearn', 'slip'].map((k) => ev('short', 50, { [k]: true }));
+  const events = [
+    ...Array.from({ length: 9 }, (_, i) => ev('short', 3 + i / 10)),
+    ...left,
+    ev('short', 50, { pass: false }),
+    ev('short', 50, { mode: 'say' }),
+    { id: 'short', mode: 'type', pass: true }, // no time: the app went into the background meanwhile
+    ...Array.from({ length: 10 }, () => ev('long', 20)),
+  ];
+  const times = answerTimes(events, byId);
+  assert.equal(times.type.length, 19, 'only right from the cue alone, with a time');
+  assert.equal(times.say.length, 1);
+  assert.equal(usualSeconds(times.type, 4), null, 'nine lines of about that length are too few');
+  assert.equal(usualSeconds(times.type, 20), 20);
+  const more = answerTimes([...events, ev('short', 3.9)], byId);
+  assert.ok(Math.abs(usualSeconds(more.type, 4) - 3.45) < 1e-9, 'the middle one: a slow answer or two do not move it');
+  assert.equal(usualSeconds(more.type, 9), null, 'none from half to twice as long');
+  const old = [...Array.from({ length: 50 }, () => ev('long', 90)), ...Array.from({ length: 100 }, () => ev('long', 15))];
+  assert.equal(usualSeconds(answerTimes(old, byId).type, 20), 15, 'the last 100 only');
 });

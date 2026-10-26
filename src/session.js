@@ -18,9 +18,9 @@
 // The session never saves anything itself: answer() returns the event and new state for the app to
 // save, and advance() then picks the next card using the app's up to date states and plan.
 import { applyHelp, applyResult, needsTeaching } from './state.js';
-import { recallNow } from './memory.js';
+import { SLOW, recallNow } from './memory.js';
 import { cueOf, speakerChoices } from './items.js';
-import { beatStage, testsOf, REVIEW_BURST, RUN_MIN } from './plan.js';
+import { beatStage, testsOf, usualSeconds, REVIEW_BURST, RUN_MIN } from './plan.js';
 import { dayKey } from './dates.js';
 
 export const TEACH_FIRST_MESSAGE = "This stretch is new to you, so I'll teach it first.";
@@ -366,12 +366,16 @@ export function createSession({ model, index, getPlan, getState, settings, scope
       const relearn = line.missed;
       const primed = !help && line.helped && !relearn;
       const pretest = !help && (!!t.pretest || prev.status === 'new');
-      const { k } = plan();
+      const { k, times } = plan();
+      // Right from the cue alone, but more than twice as slow as his usual for a line that long.
+      const usual = result.ms != null && times && times[result.mode] ? usualSeconds(times[result.mode], item.words) : null;
+      const slow = result.pass && !help && !primed && !relearn && !result.slip && usual != null && result.ms / 1000 > SLOW * usual;
       const state =
-        help && result.pass ? applyHelp(prev, { day }) : applyResult(prev, { pass: result.pass, day, time, mode: result.mode, k, pretest, relearn, primed });
+        help && result.pass ? applyHelp(prev, { day }) : applyResult(prev, { pass: result.pass, day, time, mode: result.mode, k, pretest, relearn, primed, slow });
       const event = { time, day, id, pass: result.pass, mode: result.mode, queue, misses: result.misses.length, speakerWrong: !!result.speakerWrong, relearn, prev };
       if (help) event.help = true;
       if (primed) event.primed = true;
+      if (slow) event.slow = true;
       // Which words, and how quickly: for trouble words and fluency later.
       if (result.misses.length) event.missed = [...result.misses];
       if (result.ms != null) event.ms = result.ms;
