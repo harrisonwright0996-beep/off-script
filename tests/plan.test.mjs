@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { fakeApp, learn } from './helpers.mjs';
-import { phaseOf, recallGate, dayOrder, beatStage, untilText } from '../src/plan.js';
+import { phaseOf, recallGate, dayOrder, beatStage, untilText, paceOf } from '../src/plan.js';
 import { DEFAULT_SETTINGS } from '../src/settings.js';
 import { newState } from '../src/state.js';
 import { HOUR } from '../src/memory.js';
@@ -198,6 +198,35 @@ test('beat stages', () => {
   assert.equal(beatStage(b, app.getState), 'learn');
   for (const id of b.itemIds) app.states.set(id, { ...newState(id), status: 'learning', passes: 1 });
   assert.equal(beatStage(b, app.getState), 'run');
+  app.states.set(b.itemIds[2], { ...newState(b.itemIds[2]), status: 'learning', misses: 1 });
+  assert.equal(beatStage(b, app.getState), 'learn', 'a line missed and never yet right is still to be taught');
+  app.states.set(b.itemIds[2], { ...newState(b.itemIds[2]), status: 'learning', misses: 1, helped: 1 });
+  assert.equal(beatStage(b, app.getState), 'run', 'right with the first letters: taught, so the beat is run');
   learn(app, b.itemIds);
   assert.equal(beatStage(b, app.getState), 'done');
+});
+
+test('the plan says which lines are ready, for the sprint to choose from', () => {
+  const app = fakeApp();
+  learn(app, sceneIds(app, 3), { stability: 1, hoursAgo: 3 });
+  const plan = app.plan();
+  assert.deepEqual([...plan.ready.keys()].sort(), [...sceneIds(app, 3)].sort());
+});
+
+test('goes with the first letters: their time counts, but only one outcome per check', () => {
+  const app = fakeApp();
+  const review = { status: 'review' };
+  const events = [];
+  const add = (extra) => events.push({ time: app.clock + events.length * 10000, day: app.today, id: app.model.items[events.length % 20].id, queue: 'due', mode: 'say', prev: review, pass: true, ...extra });
+  for (let i = 0; i < 10; i++) {
+    add({ help: true }); // right with the first letters: not a check of its own
+    add({ primed: true, pass: i >= 2 }); // then from the cue alone: this is the check
+  }
+  add({ help: true, pass: false }); // missed even with the first letters: a check, missed
+  add({ relearn: true, help: true });
+  add({ relearn: true });
+  const gate = recallGate(events, app.today);
+  assert.deepEqual([gate.total, gate.accuracy], [11, 8 / 11], 'help passes and relearning left out; a help miss counts');
+  const pace = paceOf(events, app.today, app.index.byId);
+  assert.equal(pace.dueSecPerItem, (20 + 22 * 10) / 11, 'every go takes its time (20 seconds for the first, 10 for each after); 11 checks');
 });

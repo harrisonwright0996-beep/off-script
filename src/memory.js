@@ -48,11 +48,12 @@ export function readyAt(s, k = 1, target = TARGET) {
 }
 
 // The personal factor, from his results on learned lines: the most recent 500 tests at least five
-// minutes after the last one, leaving out walks (marked by memory afterwards) and the check straight
-// after relearning a line. A prior keeps k near 1 until the evidence is clear. k runs from 1/3 to 3.
+// minutes after the last one, leaving out walks (marked by memory afterwards), relearning after a miss,
+// goes with the first letters and the go from the cue alone just after one (the first letters made it
+// easier). A prior keeps k near 1 until the evidence is clear. k runs from 1/3 to 3.
 export function fitFactor(events) {
   const obs = events
-    .filter((e) => e.prev && e.prev.status === 'review' && e.prev.stability && e.prev.lastTime && e.mode !== 'walk' && !e.relearn)
+    .filter((e) => e.prev && e.prev.status === 'review' && e.prev.stability && e.prev.lastTime && e.mode !== 'walk' && !e.relearn && !e.help && !e.primed)
     .map((e) => ({ t: (e.time - e.prev.lastTime) / HOUR, s: e.prev.stability, pass: e.pass }))
     .filter((o) => o.t >= 5 / 60)
     .slice(-500);

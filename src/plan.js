@@ -11,7 +11,7 @@
 // lighter and a missed day spreads out quietly; the curve is fitted to his own results; times come
 // from his own pace; once today's plan is done, "keep going" work is ready.
 import { addDays, dayEnd, daysBetween, formatDay, weekday } from './dates.js';
-import { category, isWordPerfect } from './state.js';
+import { category, isWordPerfect, needsTeaching } from './state.js';
 import { fnv1a, spineItemIds } from './items.js';
 import { OPENING_TARGET, TARGET, fitFactor, readyAt, recallNow } from './memory.js';
 
@@ -27,14 +27,18 @@ export function phaseOf(day, settings) {
   return 'maintenance';
 }
 
-// 'done' when every item has reached review, 'learn' while any item has never passed,
-// otherwise 'run' (the beat needs running from its first cue).
+// 'done' when every item has reached review, 'learn' while any item is still to be taught (never yet
+// right, with or without the first letters), otherwise 'run' (the beat needs running from its first cue).
 export function beatStage(beat, getState) {
   const states = beat.itemIds.map(getState);
   if (states.every((s) => s.status === 'review')) return 'done';
-  if (states.some((s) => s.passes === 0)) return 'learn';
+  if (states.some(needsTeaching)) return 'learn';
   return 'run';
 }
+
+// One outcome per check: a go with the first letters right is practice before the check, not a check,
+// and the goes after a miss in the same sprint are relearning.
+export const isCheck = (e) => !e.relearn && !(e.help && e.pass);
 
 // The same order all day, a different order each day.
 export function dayOrder(ids, day) {
@@ -45,7 +49,7 @@ export function dayOrder(ids, day) {
 // Yesterday's tests of learned lines: if fewer than 85% were word perfect (and there were at least
 // 20), halve new work, so there is more time for what is already learned.
 export function recallGate(events, day) {
-  const tests = events.filter((e) => e.day === day && e.prev && e.prev.status === 'review' && !e.relearn);
+  const tests = events.filter((e) => e.day === day && e.prev && e.prev.status === 'review' && isCheck(e));
   const passes = tests.filter((e) => e.pass).length;
   const accuracy = tests.length ? passes / tests.length : null;
   return { total: tests.length, accuracy, halved: tests.length >= 20 && accuracy < 0.85 };
@@ -169,10 +173,10 @@ export function paceOf(events, today, byId) {
       if (e.prev && e.prev.status === 'new') t.newWords += words;
     } else if (e.queue === 'run') {
       t.run += sec;
-      t.runWords += words;
+      if (isCheck(e)) t.runWords += words;
     } else if (e.queue === 'due') {
       t.due += sec;
-      if (!e.relearn) t.dueTests += 1; // a test, with any relearning that followed it
+      if (isCheck(e)) t.dueTests += 1; // a check, with its first letters go and any relearning
     }
   }
   const measured = t.newWords >= 60;
@@ -315,6 +319,7 @@ export function buildPlan({ model, index, getState, events, settings, today, now
     day: today,
     phase,
     k,
+    ready,
     tests,
     due,
     runs,
