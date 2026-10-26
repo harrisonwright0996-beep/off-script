@@ -43,8 +43,13 @@ export function sayMisses(tokens, tapped) {
   return [...tapped].filter((i) => tokens[i] && tokens[i].k !== null).sort((a, b) => a - b);
 }
 
-export function makeResult({ misses, speakerWrong = false, mode }) {
-  return { pass: misses.length === 0 && !speakerWrong, misses, speakerWrong, mode };
+// ms: from the answer starting (the keypad or Reveal on show) to the last key or Reveal. firstMs: to
+// the first key (Type).
+export function makeResult({ misses, speakerWrong = false, mode, ms = null, firstMs = null }) {
+  const result = { pass: misses.length === 0 && !speakerWrong, misses, speakerWrong, mode };
+  if (ms != null) result.ms = ms;
+  if (firstMs != null) result.firstMs = firstMs;
+  return result;
 }
 
 const NUMBER_WORDS = ['No', 'One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven', 'Eight', 'Nine', 'Ten'];

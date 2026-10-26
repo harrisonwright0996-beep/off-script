@@ -361,6 +361,10 @@ export function createSession({ model, index, getPlan, getState, settings, scope
       const event = { time, day, id, pass: result.pass, mode: result.mode, queue, misses: result.misses.length, speakerWrong: !!result.speakerWrong, relearn, prev };
       if (help) event.help = true;
       if (primed) event.primed = true;
+      // Which words, and how quickly: for trouble words and fluency later.
+      if (result.misses.length) event.missed = [...result.misses];
+      if (result.ms != null) event.ms = result.ms;
+      if (result.firstMs != null) event.firstMs = result.firstMs;
 
       S.goes += 1;
       line.last = S.goes;

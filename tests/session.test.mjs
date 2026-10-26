@@ -420,3 +420,21 @@ test('a cue that leads to more than one line is shown longer on its card', () =>
   assert.equal(where(card), `due:floor:${id}`);
   assert.equal(card.cue, long);
 });
+
+test('an answer saves which words were missed and how long it took, for trouble words later', () => {
+  const app = fakeApp();
+  const s = start(app);
+  s.advance();
+  s.choose('try');
+  const missed = s.answer(makeResult({ misses: [0, 2], mode: 'type', ms: 4200, firstMs: 900 }));
+  assert.deepEqual(missed.event.missed, [0, 2]);
+  assert.equal(missed.event.misses, 2);
+  assert.equal(missed.event.ms, 4200);
+  assert.equal(missed.event.firstMs, 900);
+  app.save(missed);
+  let c = s.advance();
+  while (c && c.step !== 'floor' && c.step !== 'help') c = c.step === 'test' ? s.choose('try') : s.choose('next');
+  const right = s.answer(makeResult({ misses: [], mode: 'say' }));
+  assert.equal('missed' in right.event, false);
+  assert.equal('ms' in right.event, false);
+});

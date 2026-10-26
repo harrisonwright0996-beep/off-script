@@ -92,6 +92,13 @@ export async function showSprint(ctx, { scope = 'all', minutes = null, custom = 
   };
   const timeUp = () => elapsed >= length;
 
+  let hiddenAt = 0; // when the app last went into the background
+  // How long an answer took since `start`, or null when the app was away meanwhile or it was a break.
+  const timed = (start) => {
+    const ms = Date.now() - start;
+    return hiddenAt >= start || ms > IDLE_CAP ? null : ms;
+  };
+
   async function saveSprint() {
     if (!resumable) return;
     await ctx.store.set(key, { day: today, hash: ctx.model.hash, state: session.save(), elapsed: finished ? 0 : elapsed });
@@ -180,9 +187,11 @@ export async function showSprint(ctx, { scope = 'all', minutes = null, custom = 
 
   // Say: reveal the line, tap any word missed or changed, then Done with the words tapped.
   function sayCheck(tokens, answerArea, footBox, prompt, done) {
+    const start = Date.now();
     answerArea.append(h('p', { class: 'prompt' }, prompt));
     clear(footBox).append(
       button('Reveal', () => {
+        const ms = timed(start);
         const tapped = new Set();
         const words = h('div', { class: 'words', role: 'group', 'aria-label': 'Tap any word you missed or changed' });
         tokens.forEach((t, i) => {
@@ -204,7 +213,7 @@ export async function showSprint(ctx, { scope = 'all', minutes = null, custom = 
           button('Done', () => {
             if (sent) return;
             sent = true;
-            done(sayMisses(tokens, tapped));
+            done(sayMisses(tokens, tapped), ms);
           }, { class: 'btn primary' }),
         );
         answerArea.focus({ preventScroll: true });
@@ -218,7 +227,7 @@ export async function showSprint(ctx, { scope = 'all', minutes = null, custom = 
     const answerArea = h('div', { class: 'answer-area', role: 'group', tabindex: '-1', 'aria-label': 'Your line' }, h('p', { class: 'line' }, firstLettersLine(item.tokens)));
     const footBox = h('div', { class: 'stack-foot' });
     frame(c, [cueBlock(c.cue), h('p', { class: 'speaker' }, speakerName(item)), answerArea], [footBox]);
-    sayCheck(item.tokens, answerArea, footBox, 'Say it aloud from the first letters, then reveal it.', (misses) => finish(c, makeResult({ misses, mode: 'say' })));
+    sayCheck(item.tokens, answerArea, footBox, 'Say it aloud from the first letters, then reveal it.', (misses, ms) => finish(c, makeResult({ misses, mode: 'say', ms })));
   }
 
   // Floor: from the cue alone. Who's next first (when the speaker changes), then the line.
@@ -239,7 +248,11 @@ export async function showSprint(ctx, { scope = 'all', minutes = null, custom = 
     frame(c, [cueBlock(c.cue), speakerArea, answerArea, switchMode], [footBox]);
     const foot = ctx.root.querySelector('footer');
 
-    const startAnswer = () => (mode === 'type' ? typeAnswer() : sayAnswer());
+    let answerStart = 0;
+    const startAnswer = () => {
+      answerStart = Date.now();
+      return mode === 'type' ? typeAnswer() : sayAnswer();
+    };
 
     if (c.askSpeaker) {
       speakerArea.append(h('p', { class: 'prompt', id: 'who' }, 'Who speaks next?'));
@@ -278,14 +291,16 @@ export async function showSprint(ctx, { scope = 'all', minutes = null, custom = 
       const draw = () => clear(line).append(...tokenView(tokens, check.shownUpTo, new Set(check.misses)));
       draw();
       answerArea.append(line, hint);
+      let firstMs;
       const pad = keypad((key) => {
         const r = key === '?' ? check.reveal() : check.press(key);
         if (!r) return;
+        if (firstMs === undefined) firstMs = timed(answerStart);
         hint.remove();
         draw();
         keepInView(line);
         announce(`${r.correct ? '' : 'Missed: '}${tokens[r.index].d}`);
-        if (r.done) finish(c, makeResult({ misses: check.misses, speakerWrong, mode: 'type' }));
+        if (r.done) finish(c, makeResult({ misses: check.misses, speakerWrong, mode: 'type', ms: timed(answerStart), firstMs }));
       });
       removeKeys = pad.remove;
       clear(footBox).append(pad.el);
@@ -294,7 +309,7 @@ export async function showSprint(ctx, { scope = 'all', minutes = null, custom = 
     }
 
     function sayAnswer() {
-      sayCheck(tokens, answerArea, footBox, 'Say it aloud, then reveal it.', (misses) => finish(c, makeResult({ misses, speakerWrong, mode: 'say' })));
+      sayCheck(tokens, answerArea, footBox, 'Say it aloud, then reveal it.', (misses, ms) => finish(c, makeResult({ misses, speakerWrong, mode: 'say', ms })));
     }
   }
 
@@ -438,6 +453,7 @@ export async function showSprint(ctx, { scope = 'all', minutes = null, custom = 
 
   const onVisibility = () => {
     if (document.visibilityState === 'hidden') {
+      hiddenAt = Date.now();
       tick();
       saveSprint();
     } else last = Date.now();

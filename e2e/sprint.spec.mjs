@@ -66,6 +66,11 @@ test('a miss shows the right word and comes back through first letters; undo put
   await page.keyboard.type('?' + keys.slice(1));
   await expect(page.locator('.result.misses')).toHaveText(/It was Cast\. One miss: We/);
   await expect(page.locator('.tok.miss')).toHaveCount(1);
+  // Saved with it: which word was missed and how long the line took, for trouble words.
+  const last = await page.evaluate(() => window.offScript.events.at(-1));
+  expect(last.missed).toEqual([0]);
+  expect(last.ms).toBeGreaterThanOrEqual(last.firstMs);
+  expect(last.firstMs).toBeGreaterThanOrEqual(0);
   await shot(page, 'card-result-miss');
   await page.getByRole('button', { name: 'Undo last answer' }).click();
   await expect(page.getByText('Who speaks next?')).toBeVisible();
