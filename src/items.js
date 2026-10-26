@@ -223,11 +223,70 @@ export function makeBeats(sceneItems) {
   return groups;
 }
 
-// Lookups used everywhere.
+// Lookups used everywhere. cues: the lines whose cue is made longer (uniqueCues).
 export function indexModel(model) {
   const byId = new Map(model.items.map((it) => [it.id, it]));
   const beatById = new Map(model.beats.map((b) => [b.id, b]));
-  return { byId, beatById };
+  return { byId, beatById, cues: uniqueCues(model) };
+}
+
+// The cue to show or play for a line: made longer if it would lead to more than one line.
+export const cueOf = (index, item) => (index.cues && index.cues.get(item.id)) || item.cue;
+
+export const CUE_LINES = 3; // lines before a line that a longer cue may show
+const flat = (s) => s.toLowerCase().replace(/[^\p{L}\p{N} ]/gu, '').replace(/\s+/g, ' ').trim();
+
+// Cues with one right answer. Plays repeat themselves, so the same cue can lead to different lines,
+// and a check from it alone would have two right answers. Such a line's cue shows the lines before
+// it in full, led by the first one's own cue, as few as make it the only line that fits (at most
+// three). If even that leaves an exchange that repeats word for word, the cue also says which time
+// it comes. Worked out from the saved model whenever it is indexed, so nothing is imported again.
+// Returns a map of id to { ...cue, lead: [ids shown in full], lines: [{ speaker, text }], nth }.
+export function uniqueCues(model) {
+  const { items } = model;
+  const said = (cue) => `${cue.speaker ?? ''}|${flat(cue.text)}`;
+  // What comes before line i: its own cue (n = 0), or the cue of the line n back and the lines from
+  // there in full. null once that would run back past the start of the scene.
+  const before = (i, n) => {
+    if (n === 0) return said(items[i].cue);
+    const j = i - n;
+    if (j < 0 || items[j].scene !== items[i].scene) return null;
+    return [said(items[j].cue), ...items.slice(j, i).map((x) => `${x.speaker}|${flat(x.text)}`)].join('/');
+  };
+  const groups = new Map();
+  items.forEach((it, i) => {
+    if (it.cue.speaker === null) return; // a scene opening: its cue is the scene
+    const key = before(i, 0);
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(i);
+  });
+  const cues = new Map();
+  for (const group of groups.values()) {
+    if (new Set(group.map((i) => flat(items[i].text))).size < 2) continue; // every line it leads to is the same
+    for (const i of group) {
+      const rivals = group.filter((j) => flat(items[j].text) !== flat(items[i].text));
+      let n = 0;
+      let unique = false;
+      while (!unique && n < CUE_LINES && before(i, n + 1) !== null) {
+        n += 1;
+        const mine = before(i, n);
+        unique = rivals.every((j) => before(j, n) !== mine);
+      }
+      const lead = items.slice(i - n, i);
+      const cue = {
+        ...items[i].cue,
+        lead: lead.map((x) => x.id),
+        lines: [{ speaker: lead[0].cue.speaker, text: lead[0].cue.text }, ...lead.map((x) => ({ speaker: x.speaker, text: x.text }))],
+      };
+      if (!unique) {
+        // The card names the scene, so only repeats in the same scene need telling apart.
+        const same = group.filter((j) => items[j].scene === items[i].scene && before(j, n) === before(i, n));
+        if (same.length > 1) cue.nth = same.indexOf(i) + 1;
+      }
+      cues.set(items[i].id, cue);
+    }
+  }
+  return cues;
 }
 
 // The first spoken item of every scene that has one.

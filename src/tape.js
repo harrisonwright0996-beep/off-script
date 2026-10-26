@@ -52,7 +52,20 @@ export function buildWalk({ model, index, manifest, getState, settings, plan, st
     }
     return false;
   };
-  const cue = (it) => clip(it.cue.speaker === null ? manifest.headings[it.scene] : audio(it.id).cue);
+  // A line's cue: the scene heading or the cue clip. A cue made longer so that only one line fits
+  // (uniqueCues) plays the first lead line's cue and then each lead line, from clips the pack already
+  // has, or the usual clip if any of them is missing. Not when a new line is first recalled, just after
+  // it was heard.
+  const cue = (it, long = true) => {
+    const more = long && index.cues && index.cues.get(it.id);
+    const first = more && byId.get(more.lead[0]);
+    if (first && more.lead.every(audio) && (first.cue.speaker === null || audio(first.id).cue)) {
+      clip(first.cue.speaker === null ? manifest.headings[first.scene] : audio(first.id).cue);
+      for (const id of more.lead) clip(audio(id).line);
+      return;
+    }
+    clip(it.cue.speaker === null ? manifest.headings[it.scene] : audio(it.id).cue);
+  };
   const answer = (it) => {
     const name = manifest.speakers[it.speaker];
     if (name && it.askSpeaker) clip(name);
@@ -115,7 +128,7 @@ export function buildWalk({ model, index, manifest, getState, settings, plan, st
         answer(it);
         silence(gapSeconds(it.words, gap));
       }
-      cue(it);
+      cue(it, false);
       recall(it, 'new', from);
     }
     sequence(ids, 'beat', false, true);

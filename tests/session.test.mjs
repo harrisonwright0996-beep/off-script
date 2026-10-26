@@ -409,3 +409,14 @@ test('time up in a chosen practice keeps the lines it had not reached, so it can
   const c = later.advance();
   assert.deepEqual([c.item.id, c.progress.total], [ids[1], 5], 'carrying on: a run of the five not reached');
 });
+
+test('a cue that leads to more than one line is shown longer on its card', () => {
+  const app = fakeApp();
+  const [lead, id] = app.model.beats[1].itemIds.slice(0, 2);
+  const long = { ...app.index.byId.get(id).cue, lead: [lead], lines: [{ speaker: 'Someone', text: 'A line before.' }] };
+  app.index.cues.set(id, long);
+  learn(app, [id], { stability: 1, hoursAgo: 1.5 });
+  const card = start(app, { scope: 'tests' }).advance();
+  assert.equal(where(card), `due:floor:${id}`);
+  assert.equal(card.cue, long);
+});

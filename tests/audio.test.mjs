@@ -115,3 +115,22 @@ test('a pack from another script: lines without clips are skipped and counted', 
   assert.equal(tape.missing, 2);
   assert.ok(tape.trials.length > 0);
 });
+
+test('a cue made longer plays the lines before it from the pack; a new line just heard keeps its usual cue', () => {
+  const app = fakeApp();
+  const { manifest } = readAudioPack(buildFixturePack(app.model));
+  const ids = app.model.scenes[1].itemIds;
+  const [first, second] = app.model.beats[0].itemIds; // the first new beat on the tape
+  for (const [id, lead] of [[ids[3], [ids[1], ids[2]]], [second, [first]]]) app.index.cues.set(id, { ...app.index.byId.get(id).cue, lead, lines: [] });
+  learn(app, [ids[3]], { stability: 24, hoursAgo: 48 });
+  const tape = walk(app, manifest, 3600);
+  let t = 0;
+  const timed = tape.steps.map((s) => ({ ...s, at: (t += s.dur) - s.dur }));
+  const before = (trial) => timed.filter((s) => s.clip && s.at >= trial.replayFrom - 1e-9 && s.at < trial.start - 1e-9).map((s) => s.clip);
+  assert.equal(tape.parts[0].label, 'Check');
+  const check = tape.trials.find((tr) => tr.id === ids[3]);
+  const clips = (id) => manifest.items[id];
+  assert.deepEqual(before(check), [clips(ids[1]).cue.file, clips(ids[1]).line.file, clips(ids[2]).line.file]);
+  const heard = tape.trials.find((tr) => tr.id === second && tr.queue === 'new');
+  assert.equal(before(heard).at(-1), clips(second).cue.file);
+});

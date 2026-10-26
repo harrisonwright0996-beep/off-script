@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { fixtureModel } from './helpers.mjs';
-import { buildModel, chunkSpeech, cueTail, displayRole, speakerChoices, spineItemIds } from '../src/items.js';
+import { buildModel, chunkSpeech, cueOf, cueTail, CUE_LINES, displayRole, indexModel, speakerChoices, spineItemIds, uniqueCues } from '../src/items.js';
 import { parseScript } from '../src/parse.js';
 import { readDocxParagraphs } from '../src/docx.js';
 import { buildFixtureDocx, fixtureXml, LONG_SPEECH } from './fixtures/night-ferry.mjs';
@@ -97,4 +97,47 @@ test('speaker choices: the right one plus nearby speakers, A to Z, at most six',
   assert.ok(choices.length <= 6 && choices.length >= 2);
   assert.deepEqual(choices, [...choices].sort((a, b) => a.localeCompare(b, 'en-GB')));
   assert.equal(new Set(choices).size, choices.length);
+});
+
+// A small invented play: each scene a list of [role, line].
+const play = (...scenes) =>
+  buildModel({ scenes: scenes.map((lines, i) => ({ name: `Scene ${i + 1}`, title: '', events: lines.map(([role, text]) => ({ t: 'speech', role, lines: [text] })) })) });
+
+test('a cue that leads to different lines is made longer: the lines before it, as few as make it the only one that fits', () => {
+  const m = play([['ANNA', 'Morning.'], ['BEN', 'Are you coming?'], ['ANNA', 'No.'], ['CARL', 'Fine then.'], ['BEN', 'Are you coming?'], ['ANNA', 'Yes.']]);
+  const cues = uniqueCues(m);
+  const [, coming, no, fine, , yes] = m.items;
+  assert.deepEqual([...cues.keys()], [no.id, yes.id], 'only the two lines that follow the same cue');
+  assert.deepEqual(cues.get(no.id).lead, [coming.id]);
+  assert.deepEqual(cues.get(no.id).lines, [{ speaker: 'Anna', text: 'Morning.' }, { speaker: 'Ben', text: 'Are you coming?' }]);
+  assert.deepEqual(cues.get(yes.id).lines, [{ speaker: 'Carl', text: 'Fine then.' }, { speaker: 'Ben', text: 'Are you coming?' }]);
+  assert.equal(cues.get(yes.id).nth, undefined);
+  assert.deepEqual(cues.get(yes.id).notes, yes.cue.notes);
+  const index = indexModel(m);
+  assert.equal(cueOf(index, yes), index.cues.get(yes.id));
+  assert.equal(cueOf(index, fine), fine.cue, 'every other line keeps its cue');
+  assert.equal(uniqueCues(fixtureModel().model).size, 0, 'the fixture play has no such cues');
+});
+
+test('an exchange that repeats word for word: at most three lines before, then which time it comes in the scene', () => {
+  const m = play([['ANNA', 'Ready?'], ['BEN', 'Yes.'], ['ANNA', 'Ready?'], ['BEN', 'Yes.'], ['ANNA', 'Ready?'], ['BEN', 'Yes.'], ['ANNA', 'Go.']]);
+  const cues = uniqueCues(m);
+  const ids = m.items.map((it) => it.id);
+  // "Ready?" (twice) and "Go." all follow Ben's "Yes."
+  assert.deepEqual(cues.get(ids[2]).lead, ids.slice(0, 2), 'two lines back, the start of the scene tells it apart');
+  assert.deepEqual(cues.get(ids[2]).lines[0], { speaker: null, text: 'Scene 1' });
+  assert.equal(cues.get(ids[2]).nth, undefined);
+  assert.deepEqual(cues.get(ids[4]).lead, ids.slice(1, 4));
+  assert.equal(cues.get(ids[6]).lead.length, CUE_LINES);
+  assert.deepEqual([cues.get(ids[4]).nth, cues.get(ids[6]).nth], [1, 2]);
+});
+
+test('the same exchange in two scenes needs no count: the card names the scene', () => {
+  const lines = [['ANNA', 'One.'], ['BEN', 'Two.'], ['ANNA', 'Three.'], ['BEN', 'Four.']];
+  const m = play([...lines, ['ANNA', 'Five.']], [...lines, ['ANNA', 'Six.']]);
+  const cues = uniqueCues(m);
+  const [five, six] = [m.items[4], m.items[9]];
+  assert.deepEqual([...cues.keys()], [five.id, six.id]);
+  assert.equal(cues.get(five.id).lead.length, CUE_LINES);
+  assert.deepEqual([cues.get(five.id).nth, cues.get(six.id).nth], [undefined, undefined]);
 });

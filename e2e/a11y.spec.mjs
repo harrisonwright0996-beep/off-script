@@ -26,6 +26,13 @@ for (const theme of ['cream', 'light', 'dark']) {
     await page.evaluate(() => window.offScript.go('today'));
     await check(page, 'today', found);
 
+    // The second line's cue made longer, as uniqueCues does for a cue that leads to more than one line
+    // (the invented play has none), so a long cue is checked too.
+    await page.evaluate(() => {
+      const [first, second] = window.offScript.model.items;
+      const lines = [{ speaker: first.cue.speaker, text: first.cue.text }, { speaker: first.speaker, text: first.text }];
+      window.offScript.index.cues.set(second.id, { ...second.cue, lead: [first.id], lines, nth: 2 });
+    });
     await page.getByRole('button', { name: 'Start sprint' }).click();
     await page.waitForFunction(() => window.offScript.card);
     await check(page, 'card: test', found);
@@ -49,6 +56,8 @@ for (const theme of ['cream', 'light', 'dark']) {
     await expect(page.getByText('It comes back later with the first letters, then without.')).toBeVisible();
     await check(page, 'card: first letters result', found);
     await page.getByRole('button', { name: 'Next', exact: true }).click();
+    await expect(page.getByText('The second time these lines come in the scene.')).toBeVisible();
+    await check(page, 'card: a longer cue', found);
     await page.getByRole('button', { name: 'Try it' }).click();
     await page.getByRole('button', { name: 'Say it instead' }).click();
     await page.getByRole('group', { name: 'Who speaks next?' }).getByRole('button', { name: 'Keeper', exact: true }).click();

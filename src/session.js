@@ -18,7 +18,7 @@
 // save, and advance() then picks the next card using the app's up to date states and plan.
 import { applyHelp, applyResult, needsTeaching } from './state.js';
 import { recallNow } from './memory.js';
-import { speakerChoices } from './items.js';
+import { cueOf, speakerChoices } from './items.js';
 import { beatStage, testsOf, REVIEW_BURST, RUN_MIN } from './plan.js';
 import { dayKey } from './dates.js';
 
@@ -277,7 +277,7 @@ export function createSession({ model, index, getPlan, getState, settings, scope
   function cardFor(t) {
     const item = byId.get(currentId(t));
     const step = currentStep(t);
-    const c = { key: ++S.seq, step, queue: t.queue, item, cue: item.cue, label: t.again && t.kind === 'item' ? 'Again' : LABELS[t.queue] };
+    const c = { key: ++S.seq, step, queue: t.queue, item, cue: cueOf(index, item), label: t.again && t.kind === 'item' ? 'Again' : LABELS[t.queue] };
     if (t.kind === 'seq' && t.queue === 'run') c.label = `Run: ${model.scenes[item.scene].heading}`;
     if (t.kind === 'seq') c.progress = { pos: t.pos + 1, total: t.ids.length };
     if (step === 'front') c.prompt = FRONT_PROMPTS[S.frontTurn++ % FRONT_PROMPTS.length];

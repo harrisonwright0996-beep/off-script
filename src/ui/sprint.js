@@ -14,6 +14,7 @@ const SAVED = 'sprint';
 export const PRACTICE = 'practice'; // a chosen practice, saved apart from the day's sprint
 const IDLE_CAP = 150000; // a longer pause between taps was a break: it is not counted as sprint time
 const AUTO_ADVANCE_MS = 1200;
+const ORDINALS = ['first', 'second', 'third', 'fourth', 'fifth'];
 
 // The line as it has been answered so far, misses marked with a cross as well as colour.
 export function tokenView(tokens, upTo = tokens.length, misses = new Set()) {
@@ -118,10 +119,12 @@ export async function showSprint(ctx, { scope = 'all', minutes = null, custom = 
     return h('p', { class: 'where' }, `${heading(it.scene)}, speech ${it.n}${part}`);
   }
 
+  // The cue: who speaks and what they say, or the start of a scene. A cue made longer, so that only
+  // one line fits, shows the lines before it too, and which time it comes if the exchange repeats.
   function cueBlock(cue) {
-    const line =
-      cue.speaker === null ? h('p', {}, `Start of ${cue.text}`) : h('p', {}, h('strong', {}, cue.speaker), ': ', cue.text);
-    return h('div', { class: 'cue' }, h('p', { class: 'cue-label' }, 'Cue'), line, cue.notes.map((n) => h('p', { class: 'note' }, n)));
+    const say = (l) => (l.speaker === null ? h('p', {}, `Start of ${l.text}`) : h('p', {}, h('strong', {}, l.speaker), ': ', l.text));
+    const nth = cue.nth ? h('p', { class: 'note' }, `The ${ORDINALS[cue.nth - 1] || `number ${cue.nth}`} time these lines come in the scene.`) : null;
+    return h('div', { class: 'cue' }, h('p', { class: 'cue-label' }, 'Cue'), (cue.lines || [cue]).map(say), cue.notes.map((n) => h('p', { class: 'note' }, n)), nth);
   }
 
   const readAloud = (text) =>
