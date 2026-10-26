@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { dayKey, addDays, daysBetween, weekday, formatDay, dayEnd } from '../src/dates.js';
-import { newState, applyResult, category, isSecure, isWordPerfect } from '../src/state.js';
+import { newState, applyResult, applyHelp, needsTeaching, category, isSecure, isWordPerfect } from '../src/state.js';
 import { createTypeCheck, sayMisses, makeResult, describeResult } from '../src/grade.js';
 import { tokenize } from '../src/tokens.js';
 
@@ -25,31 +25,47 @@ test('day arithmetic crosses months and the clocks going back', () => {
   assert.equal(formatDay('2026-12-14', { long: true }), 'Monday 14 December');
 });
 
-test('three passes reach review; misses never undo passes', () => {
+test('two passes reach review; misses never undo passes', () => {
   let s = newState('x');
   s = applyResult(s, { pass: false, day: 'd1', time: 1, mode: 'type', queue: 'new' });
   assert.equal(s.status, 'learning');
   assert.equal(s.firstDay, 'd1');
-  s = applyResult(s, { pass: true, day: 'd1', time: 2, mode: 'type', queue: 'new' });
-  s = applyResult(s, { pass: true, day: 'd1', time: 3, mode: 'type', queue: 'beat' });
+  s = applyResult(s, { pass: true, day: 'd1', time: 2, mode: 'type', queue: 'beat' });
   assert.equal(s.status, 'learning');
-  s = applyResult(s, { pass: true, day: 'd1', time: 4, mode: 'type', queue: 'beat' });
+  s = applyResult(s, { pass: true, day: 'd1', time: 3, mode: 'type', queue: 'beat' });
   assert.equal(s.status, 'review');
   assert.equal(s.learnedDay, 'd1');
-  assert.deepEqual([s.passes, s.misses], [3, 1]);
+  assert.deepEqual([s.passes, s.misses], [2, 1]);
   assert.equal(category(s), 'perfect');
   s = applyResult(s, { pass: false, day: 'd2', time: 5, mode: 'say', queue: 'run' });
   assert.equal(category(s), 'missed');
   assert.deepEqual(s.missDays, ['d1', 'd2']);
 });
 
-test('interrupted first sessions: review comes at the third pass, whatever the day', () => {
+test('interrupted first sessions: review comes at the second pass, whatever the day', () => {
   let s = newState('x');
-  s = applyResult(s, { pass: true, day: '2026-10-26', time: 1, mode: 'type', queue: 'new' });
+  s = applyResult(s, { pass: true, day: '2026-10-26', time: 1, mode: 'type', queue: 'beat' });
   s = applyResult(s, { pass: true, day: '2026-10-27', time: 2, mode: 'type', queue: 'beat' });
-  s = applyResult(s, { pass: true, day: '2026-10-27', time: 3, mode: 'type', queue: 'beat' });
   assert.equal(s.status, 'review');
   assert.equal(s.learnedDay, '2026-10-27');
+});
+
+test('a go with the first letters right changes nothing but marks a new line as started', () => {
+  let s = applyHelp(newState('x'), { day: '2026-10-26' });
+  assert.deepEqual([s.status, s.firstDay, s.helped, s.passes, s.stability, s.lastResult, s.lastTime], ['learning', '2026-10-26', 1, 0, null, null, 0]);
+  assert.deepEqual(s.passDays, []);
+  const learned = { ...newState('y'), status: 'review', firstDay: 'd1', learnedDay: 'd1', passes: 2, stability: 24, passDays: ['d1'], lastResult: 'miss', lastDay: 'd1', lastTime: 5 };
+  s = applyHelp(learned, { day: 'd2' });
+  assert.deepEqual(s, { ...learned, helped: 1 }, 'a learned line keeps its memory, its last result and its days');
+});
+
+test('still to be taught: never right, with or without the first letters', () => {
+  assert.equal(needsTeaching(newState('x')), true);
+  const missed = applyResult(newState('x'), { pass: false, day: 'd', time: 1, mode: 'say' });
+  assert.equal(needsTeaching(missed), true);
+  assert.equal(needsTeaching(applyHelp(missed, { day: 'd' })), false);
+  assert.equal(needsTeaching(applyResult(newState('x'), { pass: true, day: 'd', time: 1, mode: 'say' })), false);
+  assert.equal(needsTeaching({ ...newState('x'), status: 'learning', passes: 0 }), true, 'a state saved before first letters goes counted');
 });
 
 test('secure means passed on three separate days after learning, last time too', () => {

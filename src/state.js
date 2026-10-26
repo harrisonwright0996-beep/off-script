@@ -1,12 +1,13 @@
 // What the app remembers about each item, and how one result changes it.
-// status: 'new' (never practised), 'learning' (practised, fewer than 3 passes in all),
-// 'review' (reached 3 passes: successive relearning's first criterion).
+// status: 'new' (never practised), 'learning' (practised, fewer than 2 passes in all),
+// 'review' (reached 2 passes: successive relearning's first criterion, counting only recalls from
+// the cue alone; a go with the first letters is the practice before them).
 // Its memory: stability in hours (memory.js), lapses (misses since it was first recalled) and when
 // it was last tested. Nothing here says when to test it next: the plan works that out from the
 // forgetting curve whenever the app is open.
 import { FIRST, HOUR, afterMiss, growth, retrievability } from './memory.js';
 
-export const CRITERION = 3;
+export const CRITERION = 2;
 
 export function newState(id) {
   return {
@@ -16,6 +17,7 @@ export function newState(id) {
     learnedDay: null,
     passes: 0,
     misses: 0,
+    helped: 0, // goes with the first letters that were right
     lapses: 0,
     stability: null,
     passDays: [],
@@ -67,6 +69,20 @@ export function applyResult(state, { pass, day, time, mode, k = 1, pretest = fal
   s.lastMode = mode;
   return s;
 }
+
+// A go with the first letters right: it says little about memory, so it changes nothing but marks a
+// new line as started. (One missed is a miss like any other: applyResult.)
+export function applyHelp(state, { day }) {
+  const s = { ...state, helped: (state.helped || 0) + 1 };
+  if (s.status === 'new') {
+    s.status = 'learning';
+    s.firstDay = day;
+  }
+  return s;
+}
+
+// Never yet right, with or without the first letters: still to be taught.
+export const needsTeaching = (s) => s.passes === 0 && !s.helped;
 
 export const isWordPerfect = (s) => s.status === 'review' && s.lastResult === 'pass';
 export const isMissed = (s) => s.status === 'review' && s.lastResult === 'miss';
