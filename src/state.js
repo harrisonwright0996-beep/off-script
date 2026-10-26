@@ -1,0 +1,84 @@
+// What the app remembers about each item, and how one result changes it.
+// status: 'new' (never practised), 'learning' (practised, fewer than 3 passes in all),
+// 'review' (reached 3 passes: successive relearning's first criterion).
+// Its memory: stability in hours (memory.js), lapses (misses since it was first recalled) and when
+// it was last tested. Nothing here says when to test it next: the plan works that out from the
+// forgetting curve whenever the app is open.
+import { FIRST, HOUR, afterMiss, growth, retrievability } from './memory.js';
+
+export const CRITERION = 3;
+
+export function newState(id) {
+  return {
+    id,
+    status: 'new',
+    firstDay: null,
+    learnedDay: null,
+    passes: 0,
+    misses: 0,
+    lapses: 0,
+    stability: null,
+    passDays: [],
+    missDays: [],
+    lastResult: null,
+    lastDay: null,
+    lastTime: 0,
+    lastMode: null,
+  };
+}
+
+const addDay = (days, day) => (days.includes(day) ? days : [...days, day]);
+
+// result: { pass, day, time, mode, k, pretest, relearn }. Returns a new state; the old one is
+// untouched (undo keeps it). k: his personal factor. pretest: recalled before being taught.
+// relearn: the check straight after studying the line again, which says little about memory, so it
+// does not grow it.
+export function applyResult(state, { pass, day, time, mode, k = 1, pretest = false, relearn = false }) {
+  const s = { ...state };
+  if (s.status === 'new') {
+    s.status = 'learning';
+    s.firstDay = day;
+  }
+  if (pass) {
+    s.passes += 1;
+    s.passDays = addDay(s.passDays, day);
+  } else {
+    s.misses += 1;
+    s.missDays = addDay(s.missDays, day);
+  }
+
+  if (state.stability == null) {
+    if (pass) s.stability = pretest ? FIRST.known : FIRST.studied;
+  } else if (!pass) {
+    s.lapses = (state.lapses || 0) + 1;
+    s.stability = afterMiss(state.stability);
+  } else if (!relearn) {
+    const r = retrievability((time - state.lastTime) / HOUR, k * state.stability);
+    s.stability = state.stability * growth(state.stability, r, state.lapses || 0);
+  }
+
+  if (state.status !== 'review' && s.passes >= CRITERION) {
+    s.status = 'review';
+    s.learnedDay = day;
+  }
+  s.lastResult = pass ? 'pass' : 'miss';
+  s.lastDay = day;
+  s.lastTime = time;
+  s.lastMode = mode;
+  return s;
+}
+
+export const isWordPerfect = (s) => s.status === 'review' && s.lastResult === 'pass';
+export const isMissed = (s) => s.status === 'review' && s.lastResult === 'miss';
+
+// Passed on 3 or more separate days after the day it was learned, and passed last time.
+export const isSecure = (s) => isWordPerfect(s) && s.passDays.filter((d) => d > s.learnedDay).length >= 3;
+
+// For the map: 'new', 'learning', 'perfect' or 'missed'.
+export function category(s) {
+  if (s.status === 'new') return 'new';
+  if (s.status === 'learning') return 'learning';
+  return s.lastResult === 'miss' ? 'missed' : 'perfect';
+}
+
+export const passedOn = (s, day) => s.passDays.includes(day);
