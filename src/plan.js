@@ -58,15 +58,16 @@ export function dayOrder(ids, day) {
 }
 
 // New work, from his most recent checks of learned lines before today: the last 100 (at least 40
-// are needed; sprints only, since walks are marked from memory afterwards), the ones he got right
-// against the number his forgetting curve expected for those same checks. Bad luck alone often costs
-// a few points, so a shortfall of up to 3 points changes nothing; beyond that new work is cut
-// smoothly (5% for each point more), to no less than half, so there is more time for what is learned.
+// are needed; sprints only, and not the check just after a walk, since walks are marked from memory
+// afterwards), the ones he got right against the number his forgetting curve expected for those same
+// checks. Bad luck alone often costs a few points, so a shortfall of up to 3 points changes nothing;
+// beyond that new work is cut smoothly (5% for each point more), to no less than half, so there is
+// more time for what is learned.
 export const GATE = { window: 100, min: 40, slack: 0.03, slope: 5, floor: 0.5 };
 
 export function recallGate(events, { before = Infinity, k = 1 } = {}) {
   const checks = events
-    .filter((e) => e.time < before && e.mode !== 'walk' && e.prev && e.prev.status === 'review' && e.prev.stability && e.prev.lastTime && isCheck(e))
+    .filter((e) => e.time < before && e.mode !== 'walk' && e.prev && e.prev.status === 'review' && e.prev.lastMode !== 'walk' && e.prev.stability && e.prev.lastTime && isCheck(e))
     .sort((a, b) => a.time - b.time)
     .slice(-GATE.window);
   const passes = checks.filter((e) => e.pass).length;
