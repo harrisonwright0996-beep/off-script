@@ -463,24 +463,59 @@ test('a slip of the finger counted right is saved as right, and marked as a slip
   assert.equal(rec.event.slip, true);
 });
 
-test('right but much slower than his usual for a line that long: its memory grows by half as much', () => {
+test('right but typed much slower than usual once under way: its memory grows by half as much; a slow start alone is not slow', () => {
   const app = fakeApp();
-  const [slowId, quickId] = app.model.beats[3].itemIds.slice(0, 2);
-  learn(app, [slowId, quickId], { stability: 1, hoursAgo: 1.5 }); // due, and above 80%: from the cue alone
-  // (The two answers come 10 seconds apart, so their growth differs a touch anyway.)
-  // His usual: ten earlier answers for each line, right in 3 seconds.
-  for (const id of [slowId, quickId]) for (let i = 0; i < 10; i++) app.events.push({ id, mode: 'type', pass: true, ms: 3000 });
+  const ids = app.model.beats[3].itemIds.filter((id) => app.index.byId.get(id).words >= 3).slice(0, 3);
+  assert.equal(ids.length, 3);
+  const [slowId, startId, quickId] = ids;
+  learn(app, ids, { stability: 1, hoursAgo: 1.5 }); // due, and above 80%: from the cue alone
+  // His usual: 20 earlier lines typed right at half a second a word after the first key.
+  for (let i = 0; i < 20; i++) app.events.push({ id: quickId, mode: 'type', pass: true, firstMs: 2000, ms: 2000 + 500 * (app.index.byId.get(quickId).words - 1) });
   const s = start(app, { scope: 'tests' });
   const recs = new Map();
   for (let c = s.advance(); c; c = s.advance()) {
-    const rec = s.answer(makeResult({ misses: [], mode: 'type', ms: c.item.id === slowId ? 7000 : 3000 }));
+    const after = c.item.words - 1;
+    const timing = { [slowId]: { firstMs: 2000, ms: 2000 + 1100 * after }, [startId]: { firstMs: 30000, ms: 30000 + 500 * after }, [quickId]: { firstMs: 2000, ms: 2000 + 500 * after } }[c.item.id];
+    const rec = s.answer(makeResult({ misses: [], mode: 'type', ...timing }));
     app.save(rec);
     recs.set(c.item.id, rec);
   }
-  assert.deepEqual([...recs.keys()].sort(), [slowId, quickId].sort(), 'one go each');
-  assert.equal(recs.get(slowId).event.slow, true, 'more than twice as long as usual');
+  assert.deepEqual([...recs.keys()].sort(), [...ids].sort(), 'one go each');
+  assert.equal(recs.get(slowId).event.slow, true, 'more than twice as long a word');
+  assert.equal('slow' in recs.get(startId).event, false, 'long to start (reading the cue, say), then typed at his usual speed');
   assert.equal('slow' in recs.get(quickId).event, false);
   const grew = (id) => recs.get(id).state.stability;
+  // (The answers come 10 seconds apart, so their growth differs a touch anyway.)
   assert.ok(Math.abs(grew(slowId) - 1 - (grew(quickId) - 1) / 2) < 0.01, `slow: x${grew(slowId).toFixed(3)}, usual: x${grew(quickId).toFixed(3)}`);
   assert.ok(grew(slowId) > 1, 'it still grows: it was right');
+});
+
+test('a line being read: only Next moves on, so a second tap on Teach me does not skip the reading', () => {
+  const app = fakeApp();
+  const s = start(app);
+  assert.equal(s.advance().step, 'test');
+  const front = s.choose('teach');
+  assert.equal(front.step, 'front');
+  assert.equal(s.choose('teach'), front, 'the same card, still on show');
+  assert.equal(s.choose('try'), front);
+  assert.equal(s.state.lines[front.item.id]?.taught, undefined, 'not yet read');
+  assert.equal(s.choose('next'), null, 'read: on to the next card');
+  assert.equal(s.state.lines[front.item.id].taught, true);
+});
+
+test('a line read with its beat, then missed with the first letters, has the first letters twice more before it goes without', () => {
+  const app = fakeApp();
+  const target = app.model.beats[0].itemIds[0];
+  let missed = false;
+  const log = play(app, start(app), {
+    onTest: 'teach',
+    decide: (card) => {
+      if (card.item.id === target && card.step === 'help' && !missed) return !(missed = true);
+      return true;
+    },
+  });
+  const goes = log.filter((l) => l.endsWith(`:${target}`)).map((l) => l.split(':')[1]);
+  const after = goes.slice(goes.indexOf('help') + 1);
+  assert.deepEqual(after.slice(0, after.indexOf('floor')), ['front', 'help', 'help'], `read again, then the first letters twice: ${goes.join(' ')}`);
+  assert.equal(app.getState(target).status, 'review', 'and it is learned');
 });

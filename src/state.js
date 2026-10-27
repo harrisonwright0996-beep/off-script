@@ -35,7 +35,7 @@ const addDay = (days, day) => (days.includes(day) ? days : [...days, day]);
 // one is untouched (undo keeps it). k: his personal factor. pretest: recalled before being taught.
 // relearn: a go after missing the line earlier in the same sprint, which says little about memory, so
 // it does not grow it. primed: from the cue alone just after a go with the first letters, and slow:
-// right but much slower than usual; either grows memory by half as much.
+// typed right but much slower than usual; either grows memory by half as much.
 export function applyResult(state, { pass, day, time, mode, k = 1, pretest = false, relearn = false, primed = false, slow = false }) {
   const s = { ...state };
   if (s.status === 'new') {

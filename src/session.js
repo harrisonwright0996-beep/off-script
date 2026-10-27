@@ -20,7 +20,7 @@
 import { applyHelp, applyResult, needsTeaching } from './state.js';
 import { SLOW, recallNow } from './memory.js';
 import { cueOf, speakerChoices } from './items.js';
-import { beatStage, testsOf, usualSeconds, REVIEW_BURST, RUN_MIN } from './plan.js';
+import { beatStage, testsOf, typedPerWord, REVIEW_BURST, RUN_MIN } from './plan.js';
 import { dayKey } from './dates.js';
 
 export const TEACH_FIRST_MESSAGE = "This stretch is new to you, so I'll teach it first.";
@@ -334,6 +334,7 @@ export function createSession({ model, index, getPlan, getState, settings, scope
         t.pretest = action === 'try';
         t.step = action === 'try' ? 'floor' : 'front';
       } else if (step === 'front') {
+        if (action !== 'next') return card; // only Next moves on from a line being read
         const line = lineOf(currentId(t));
         line.need = 'help';
         if (t.step) {
@@ -366,10 +367,10 @@ export function createSession({ model, index, getPlan, getState, settings, scope
       const relearn = line.missed;
       const primed = !help && line.helped && !relearn;
       const pretest = !help && (!!t.pretest || prev.status === 'new');
-      const { k, times } = plan();
-      // Right from the cue alone, but more than twice as slow as his usual for a line that long.
-      const usual = result.ms != null && times && times[result.mode] ? usualSeconds(times[result.mode], item.words) : null;
-      const slow = result.pass && !help && !primed && !relearn && !result.slip && usual != null && result.ms / 1000 > SLOW * usual;
+      const { k, typing } = plan();
+      // Typed right from the cue alone, but more than twice as slowly a word as usual once under way.
+      const perWord = typedPerWord(result, item);
+      const slow = result.pass && !help && !primed && !relearn && !result.slip && typing != null && perWord != null && perWord > SLOW * typing;
       const state =
         help && result.pass ? applyHelp(prev, { day }) : applyResult(prev, { pass: result.pass, day, time, mode: result.mode, k, pretest, relearn, primed, slow });
       const event = { time, day, id, pass: result.pass, mode: result.mode, queue, misses: result.misses.length, speakerWrong: !!result.speakerWrong, relearn, prev };
@@ -393,6 +394,7 @@ export function createSession({ model, index, getPlan, getState, settings, scope
       } else {
         line.missed = true;
         line.need = missNeed(prev);
+        line.taught = false; // read again, it has the first letters twice, as a line not yet taught does
       }
       if (!help) {
         S.stats.answered += 1;

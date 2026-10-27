@@ -180,6 +180,7 @@ test('the keypad by touch: each tap types once, even the same key twice in a row
   await page.getByRole('group', { name: 'Who speaks next?' }).getByRole('button', { name: 'Cast', exact: true }).click();
   const keys = await keysOf(page);
   expect(keys).toMatch(/(.)\1/); // "who waited": the same first letter twice in a row
+  await page.waitForTimeout(400); // a touch just as the keypad comes up is the second tap of a double tap
   for (const k of keys) {
     const box = await page.locator(`.keypad button[data-key="${k}"]`).boundingBox();
     await page.touchscreen.tap(box.x + box.width / 2, box.y + box.height / 2);

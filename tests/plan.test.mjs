@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { fakeApp, learn } from './helpers.mjs';
-import { phaseOf, recallGate, dayOrder, beatStage, untilText, paceOf, buildPlan, answerTimes, usualSeconds, FRONT_LOAD } from '../src/plan.js';
+import { phaseOf, recallGate, dayOrder, beatStage, untilText, paceOf, activeTime, buildPlan, typingPace, typedPerWord, FRONT_LOAD } from '../src/plan.js';
 import { DEFAULT_SETTINGS } from '../src/settings.js';
 import { newState } from '../src/state.js';
 import { HOUR } from '../src/memory.js';
@@ -345,26 +345,40 @@ test('a missing show day, or one on or before off script day, changes nothing el
   }
 });
 
-test('his usual answer time: the last 100 lines right from the cue alone in that mode, for lines of about that length', () => {
-  const byId = new Map([['short', { words: 4 }], ['long', { words: 20 }]]);
-  const ev = (id, sec, extra = {}) => ({ id, mode: 'type', pass: true, ms: sec * 1000, ...extra });
-  const left = ['help', 'primed', 'relearn', 'slip'].map((k) => ev('short', 50, { [k]: true }));
+test('his usual typing speed once a line is under way: seconds a word after the first key, over his last 100 lines typed right', () => {
+  const byId = new Map([['short', { words: 4 }], ['long', { words: 21 }], ['tiny', { words: 2 }]]);
+  // A 4 word line: 3 words after the first key. A 21 word line: 20.
+  const ev = (id, perWord, extra = {}) => {
+    const words = byId.get(id).words;
+    return { id, mode: 'type', pass: true, firstMs: 5000, ms: 5000 + perWord * (words - 1) * 1000, ...extra };
+  };
+  assert.equal(typedPerWord(ev('long', 0.5), byId.get('long')), 0.5, 'the time before the first key is left out');
+  assert.equal(typedPerWord(ev('tiny', 0.5), byId.get('tiny')), null, 'a line under 3 words says too little');
+  assert.equal(typedPerWord({ mode: 'say', ms: 9000, firstMs: null }, byId.get('long')), null, 'Type only');
+  const left = ['help', 'primed', 'relearn', 'slip'].map((k) => ev('long', 9, { [k]: true }));
   const events = [
-    ...Array.from({ length: 9 }, (_, i) => ev('short', 3 + i / 10)),
+    ...Array.from({ length: 10 }, () => ev('short', 0.6, { firstMs: 1500, ms: 1500 + 0.6 * 3 * 1000 })),
+    ...Array.from({ length: 9 }, () => ev('long', 0.6)),
     ...left,
-    ev('short', 50, { pass: false }),
-    ev('short', 50, { mode: 'say' }),
-    { id: 'short', mode: 'type', pass: true }, // no time: the app went into the background meanwhile
-    ...Array.from({ length: 10 }, () => ev('long', 20)),
+    ev('long', 9, { pass: false }),
+    { id: 'long', mode: 'type', pass: true, ms: null, firstMs: null }, // the app went into the background
+    ev('tiny', 9),
   ];
-  const times = answerTimes(events, byId);
-  assert.equal(times.type.length, 19, 'only right from the cue alone, with a time');
-  assert.equal(times.say.length, 1);
-  assert.equal(usualSeconds(times.type, 4), null, 'nine lines of about that length are too few');
-  assert.equal(usualSeconds(times.type, 20), 20);
-  const more = answerTimes([...events, ev('short', 3.9)], byId);
-  assert.ok(Math.abs(usualSeconds(more.type, 4) - 3.45) < 1e-9, 'the middle one: a slow answer or two do not move it');
-  assert.equal(usualSeconds(more.type, 9), null, 'none from half to twice as long');
-  const old = [...Array.from({ length: 50 }, () => ev('long', 90)), ...Array.from({ length: 100 }, () => ev('long', 15))];
-  assert.equal(usualSeconds(answerTimes(old, byId).type, 20), 15, 'the last 100 only');
+  assert.equal(typingPace(events, byId), null, '19 lines are too few');
+  const more = [...events, ev('long', 0.6)];
+  assert.ok(Math.abs(typingPace(more, byId) - 0.6) < 1e-9, 'the middle one, whatever the length of the lines');
+  const old = [...Array.from({ length: 50 }, () => ev('long', 3)), ...Array.from({ length: 100 }, () => ev('short', 0.5))];
+  assert.ok(Math.abs(typingPace(old, byId) - 0.5) < 1e-9, 'the last 100 only');
+});
+
+test('time spent: the sprint clock where an answer has it, so reading lines before the answer counts too', () => {
+  const day = '2026-10-27';
+  const t0 = Date.UTC(2026, 9, 27, 9);
+  const events = [
+    { day, time: t0, active: 30 },
+    { day, time: t0 + 400000, active: 380 }, // a beat read for six minutes, then its first go
+    { day, time: t0 + 410000 }, // no count saved: from the gap
+    { day, time: t0 + 900000 }, // a long gap: a break
+  ];
+  assert.deepEqual(activeTime(events).map((x) => x.sec), [30, 380, 10, 20]);
 });

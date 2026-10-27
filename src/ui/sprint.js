@@ -2,7 +2,7 @@
 // tapping the words missed (Say); a first letters card is always said. Every answer is saved at once,
 // and so is the sprint, so closing the app loses nothing. Time is a slim bar that only moves when he
 // does something; at time up nothing new comes, only the lines still to finish, then Sprint done.
-import { h, clear, screen, button, announce, focusHeading, num, plural } from './dom.js';
+import { h, clear, screen, button, announce, focusHeading, num, plural, drawn, settled } from './dom.js';
 import { createSession, linesLeft } from '../session.js';
 import { createTypeCheck, sayMisses, makeResult, describeResult, repeatMisses, troubleNote } from '../grade.js';
 import { firstLettersLine } from '../tokens.js';
@@ -92,12 +92,30 @@ export async function showSprint(ctx, { scope = 'all', minutes = null, custom = 
   };
   const timeUp = () => elapsed >= length;
 
+  let answeredAt = elapsed; // the sprint clock at the last answer
   let hiddenAt = 0; // when the app last went into the background
+  let shownAt = 0; // and when it last came back
   // How long an answer took since `start`, or null when the app was away meanwhile or it was a break.
   const timed = (start) => {
     const ms = Date.now() - start;
-    return hiddenAt >= start || ms > IDLE_CAP ? null : ms;
+    return hiddenAt >= start || shownAt > start || ms > IDLE_CAP ? null : ms;
   };
+
+  // One thing at a time: while an answer or a step is being saved, other taps are let go, so a quick
+  // second tap can never act on the card after, or on an answer already changed.
+  let busy = false;
+  async function once(fn) {
+    if (busy) return;
+    busy = true;
+    try {
+      await fn();
+    } finally {
+      busy = false;
+    }
+  }
+  // A control's action. A touch on it just as it was drawn was the second tap of a double tap on
+  // what was there before, and does nothing (dom.js).
+  const act = (fn) => settled((...args) => once(() => fn(...args)));
 
   async function saveSprint() {
     if (!resumable) return;
@@ -154,9 +172,9 @@ export async function showSprint(ctx, { scope = 'all', minutes = null, custom = 
   // Draws a card: the bar, where it is, any message, then the card's own content and actions.
   function frame(c, content, footer, footerClass = '') {
     quiet();
-    const actions = undo.length ? [button('Undo', doUndo, { class: 'btn link', aria: 'Undo last answer' })] : [];
+    const actions = undo.length ? [button('Undo', act(doUndo), { class: 'btn link', aria: 'Undo last answer' })] : [];
     const body = [timeBar(), where(c), c.message ? h('p', { class: 'message', role: 'status' }, c.message) : null, ...content];
-    clear(ctx.root).append(screen({ title: c.label, back: stop, backLabel: 'Stop', actions, body, footer, footerClass, className: 'sprint' }));
+    clear(ctx.root).append(screen({ title: c.label, back: act(stop), backLabel: 'Stop', actions, body, footer, footerClass, className: 'sprint' }));
     window.scrollTo(0, 0); // each card starts at its cue
   }
 
@@ -164,14 +182,14 @@ export async function showSprint(ctx, { scope = 'all', minutes = null, custom = 
     ctx.card = c; // the card on show, for browser tests
     if (c.step === 'test') {
       frame(c, [cueBlock(c.cue), h('p', { class: 'prompt' }, 'Do you know the next line?')], [
-        button('Try it', () => choose('try'), { class: 'btn primary' }),
-        button('Teach me', () => choose('teach')),
+        button('Try it', act(() => choose('try')), { class: 'btn primary' }),
+        button('Teach me', act(() => choose('teach'))),
       ]);
     } else if (c.step === 'front') {
       frame(
         c,
         [cueBlock(c.cue), h('p', { class: 'speaker' }, c.item.speaker), h('p', { class: 'line' }, tokenView(c.item.tokens)), h('p', { class: 'prompt' }, c.prompt)],
-        [button('Next', () => choose('next'), { class: 'btn primary' }), readAloud(c.item.text)].filter(Boolean),
+        [button('Next', act(() => choose('next')), { class: 'btn primary' }), readAloud(c.item.text)].filter(Boolean),
       );
     } else if (c.step === 'help') helpCard(c);
     else floor(c);
@@ -191,7 +209,7 @@ export async function showSprint(ctx, { scope = 'all', minutes = null, custom = 
     const start = Date.now();
     answerArea.append(h('p', { class: 'prompt' }, prompt));
     clear(footBox).append(
-      button('Reveal', () => {
+      button('Reveal', act(() => {
         const ms = timed(start);
         const tapped = new Set();
         const words = h('div', { class: 'words', role: 'group', 'aria-label': 'Tap any word you missed or changed' });
@@ -211,14 +229,15 @@ export async function showSprint(ctx, { scope = 'all', minutes = null, custom = 
         keepInView(answerArea);
         let sent = false; // a quick second tap is not a second answer
         clear(footBox).append(
-          button('Done', () => {
+          button('Done', act(() => {
             if (sent) return;
             sent = true;
-            done(sayMisses(tokens, tapped), ms);
-          }, { class: 'btn primary' }),
+            return done(sayMisses(tokens, tapped), ms);
+          }), { class: 'btn primary' }),
         );
+        drawn(); // Done comes up where Reveal was
         answerArea.focus({ preventScroll: true });
-      }, { class: 'btn primary' }),
+      }), { class: 'btn primary' }),
     );
   }
 
@@ -239,12 +258,12 @@ export async function showSprint(ctx, { scope = 'all', minutes = null, custom = 
     const speakerArea = h('div', { class: 'speaker-area' });
     const answerArea = h('div', { class: 'answer-area', role: 'group', tabindex: '-1', 'aria-label': 'Your line' });
     const footBox = h('div', { class: 'stack-foot' });
-    const switchMode = button(mode === 'type' ? 'Say it instead' : 'Type it instead', () => {
+    const switchMode = button(mode === 'type' ? 'Say it instead' : 'Type it instead', act(() => {
       mode = mode === 'type' ? 'say' : 'type';
       ctx.saveSettings({ mode });
       floor(c);
       focusHeading(ctx.root);
-    }, { class: 'btn link' });
+    }), { class: 'btn link' });
 
     frame(c, [cueBlock(c.cue), speakerArea, answerArea, switchMode], [footBox]);
     const foot = ctx.root.querySelector('footer');
@@ -252,7 +271,9 @@ export async function showSprint(ctx, { scope = 'all', minutes = null, custom = 
     let answerStart = 0;
     const startAnswer = () => {
       answerStart = Date.now();
-      return mode === 'type' ? typeAnswer() : sayAnswer();
+      if (mode === 'type') typeAnswer();
+      else sayAnswer();
+      drawn(); // the keypad, or Reveal, comes up
     };
 
     if (c.askSpeaker) {
@@ -260,7 +281,7 @@ export async function showSprint(ctx, { scope = 'all', minutes = null, custom = 
       const chips = h('div', { class: 'chips', role: 'group', 'aria-labelledby': 'who' });
       for (const name of c.choices) {
         chips.append(
-          button(name, () => {
+          button(name, act(() => {
             speakerWrong = name !== item.speaker;
             for (const b of chips.querySelectorAll('button')) {
               b.disabled = true;
@@ -275,7 +296,7 @@ export async function showSprint(ctx, { scope = 'all', minutes = null, custom = 
             announce(speakerWrong ? `It was ${item.speaker}` : item.speaker);
             startAnswer();
             answerArea.focus({ preventScroll: true });
-          }, { class: 'btn chip' }),
+          }), { class: 'btn chip' }),
         );
       }
       speakerArea.append(chips);
@@ -306,7 +327,8 @@ export async function showSprint(ctx, { scope = 'all', minutes = null, custom = 
         // One or two wrong keys, each touching the right one, and nothing else wrong: he may say it
         // was only a slip of the finger.
         const slipped = !speakerWrong && check.misses.length <= 2 && check.misses.every((i) => check.slips.includes(i));
-        finish(c, makeResult({ misses: check.misses, speakerWrong, mode: 'type', ms: timed(answerStart), firstMs }), { slipped });
+        const result = makeResult({ misses: check.misses, speakerWrong, mode: 'type', ms: timed(answerStart), firstMs });
+        once(() => finish(c, result, { slipped }));
       });
       removeKeys = pad.remove;
       clear(footBox).append(pad.el);
@@ -323,6 +345,9 @@ export async function showSprint(ctx, { scope = 'all', minutes = null, custom = 
     quiet();
     tick();
     const rec = session.answer(result);
+    rec.event.active = Math.round((elapsed - answeredAt) / 100) / 10; // seconds on the cards since the answer before
+    rec.before = answeredAt;
+    answeredAt = elapsed;
     await ctx.saveAnswer(rec);
     undo.push(rec);
     await saveSprint();
@@ -331,20 +356,22 @@ export async function showSprint(ctx, { scope = 'all', minutes = null, custom = 
     const earlier = ctx.events.filter((e) => e !== rec.event);
     const trouble = result.pass ? null : troubleNote(c.item.tokens, repeatMisses(earlier, c.item.id, result.misses));
     announce([`${text}.`, trouble, note].filter(Boolean).join(' '));
-    feedback(c, result, text, note, slipped && !result.pass, trouble);
+    feedback(c, result, text, note, slipped && !result.pass, trouble, rec);
   }
 
   // He says the wrong keys were only slips of the finger: the answer is taken back and saved as right.
-  async function countRight(c, result) {
-    const rec = undo.pop();
-    if (!rec) return;
+  // Only that answer: if it is no longer the last one saved, nothing happens.
+  async function countRight(c, result, rec) {
+    if (!rec || undo[undo.length - 1] !== rec) return;
+    undo.pop();
     quiet();
     await ctx.undoAnswer(rec);
+    answeredAt = rec.before;
     session.restore(rec.snapshot);
     await finish(c, makeResult({ misses: [], mode: result.mode, ms: result.ms, firstMs: result.firstMs, slip: true }));
   }
 
-  function feedback(c, result, text, note, slipped = false, trouble = null) {
+  function feedback(c, result, text, note, slipped = false, trouble = null, rec = null) {
     const misses = new Set(result.misses);
     const block = h(
       'p',
@@ -362,7 +389,7 @@ export async function showSprint(ctx, { scope = 'all', minutes = null, custom = 
         trouble ? h('p', { class: 'help trouble' }, trouble) : null,
         note ? h('p', { class: 'help' }, note) : null,
       ],
-      [button('Next', next, { class: 'btn primary' }), slipped ? button('A slip of the finger? Count it right', () => countRight(c, result)) : null].filter(Boolean),
+      [button('Next', act(next), { class: 'btn primary' }), slipped ? button('A slip of the finger? Count it right', act(() => countRight(c, result, rec))) : null].filter(Boolean),
     );
     ctx.root.querySelector('footer .btn').focus({ preventScroll: true });
     keepInView(block);
@@ -374,6 +401,7 @@ export async function showSprint(ctx, { scope = 'all', minutes = null, custom = 
     if (!rec) return;
     quiet();
     await ctx.undoAnswer(rec);
+    answeredAt = rec.before;
     const c = session.restore(rec.snapshot);
     await saveSprint();
     announce('Last answer undone');
@@ -405,7 +433,7 @@ export async function showSprint(ctx, { scope = 'all', minutes = null, custom = 
 
   function plain(title, body, footer) {
     quiet();
-    clear(ctx.root).append(screen({ title, back: stop, backLabel: 'Today', body, footer }));
+    clear(ctx.root).append(screen({ title, back: act(stop), backLabel: 'Today', body, footer }));
     focusHeading(ctx.root);
   }
 
@@ -418,8 +446,8 @@ export async function showSprint(ctx, { scope = 'all', minutes = null, custom = 
     const st = done();
     if (short) {
       return plain('Keep going?', [h('p', { class: 'lead' }, statsLine(st)), h('p', {}, 'That was 2 minutes. Starting is the hard part, and it is done.')], [
-        button('Start a sprint', () => ctx.go('sprint'), { class: 'btn primary' }),
-        button('Stop for now', () => ctx.go('today')),
+        button('Start a sprint', act(() => ctx.go('sprint')), { class: 'btn primary' }),
+        button('Stop for now', act(() => ctx.go('today'))),
       ]);
     }
     const mins = ctx.settings.breakMinutes;
@@ -438,9 +466,9 @@ export async function showSprint(ctx, { scope = 'all', minutes = null, custom = 
     const left = chosen ? linesLeft(session.state) : 0;
     plain('Sprint done', [h('p', { class: 'lead' }, statsLine(st)), left ? h('p', {}, `${plural(left, 'line')} of this practice still to go.`) : null, h('h2', {}, 'Break'), bar, status], [
       left
-        ? button('Carry on', () => ctx.go('sprint', { practice: 'resume' }), { class: 'btn primary' })
-        : button('Another sprint', () => ctx.go('sprint'), { class: 'btn primary' }),
-      button('Stop for now', () => ctx.go('today')),
+        ? button('Carry on', act(() => ctx.go('sprint', { practice: 'resume' })), { class: 'btn primary' })
+        : button('Another sprint', act(() => ctx.go('sprint')), { class: 'btn primary' }),
+      button('Stop for now', act(() => ctx.go('today'))),
     ]);
   }
 
@@ -451,27 +479,27 @@ export async function showSprint(ctx, { scope = 'all', minutes = null, custom = 
     const said = st.answered ? h('p', {}, statsLine(st)) : null;
     if (chosen) {
       return plain('Practice done', [h('p', { class: 'lead' }, `${chosen.title}.`), said], [
-        button('Choose again', () => ctx.go('choose'), { class: 'btn primary' }),
-        button('Today', () => ctx.go('today')),
+        button('Choose again', act(() => ctx.go('choose')), { class: 'btn primary' }),
+        button('Today', act(() => ctx.go('today'))),
       ]);
     }
     if (custom) {
       return plain('Run done', [h('p', { class: 'lead' }, `That was a run of ${heading(custom.scene)}.`), said], [
-        button('Back to the scene', () => ctx.go('reader', { scene: custom.scene }), { class: 'btn primary' }),
-        button('Today', () => ctx.go('today')),
+        button('Back to the scene', act(() => ctx.go('reader', { scene: custom.scene })), { class: 'btn primary' }),
+        button('Today', act(() => ctx.go('today'))),
       ]);
     }
     if (scope === 'tests') {
       return plain('Checks done', [h('p', { class: 'lead' }, 'Everything ready to check is done.'), nextCheck, said], [
-        button('Start a sprint', () => ctx.go('sprint'), { class: 'btn primary' }),
-        button('Stop for now', () => ctx.go('today')),
+        button('Start a sprint', act(() => ctx.go('sprint')), { class: 'btn primary' }),
+        button('Stop for now', act(() => ctx.go('today'))),
       ]);
     }
     const keepGoing = (what) => carryOn(() => session.keepGoing(what));
     const footer = [
-      plan.ahead.length ? button('Head start on tomorrow', () => keepGoing('new'), { class: 'btn primary' }) : null,
-      plan.extraRuns.length ? button('An extra run', () => keepGoing('runs'), { class: plan.ahead.length ? 'btn' : 'btn primary' }) : null,
-      button('Stop for now', () => ctx.go('today')),
+      plan.ahead.length ? button('Head start on tomorrow', act(() => keepGoing('new')), { class: 'btn primary' }) : null,
+      plan.extraRuns.length ? button('An extra run', act(() => keepGoing('runs')), { class: plan.ahead.length ? 'btn' : 'btn primary' }) : null,
+      button('Stop for now', act(() => ctx.go('today'))),
     ].filter(Boolean);
     plain("Today's plan is done", [h('p', { class: 'lead' }, 'Everything ready for now is done.'), nextCheck, said, h('p', {}, 'Keep going?')], footer);
   }
@@ -481,7 +509,10 @@ export async function showSprint(ctx, { scope = 'all', minutes = null, custom = 
       hiddenAt = Date.now();
       tick();
       saveSprint();
-    } else last = Date.now();
+    } else {
+      last = Date.now();
+      shownAt = last;
+    }
   };
   document.addEventListener('visibilitychange', onVisibility);
 

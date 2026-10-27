@@ -172,13 +172,15 @@ export const DEFAULT_PACE = { newSecPerWord: 4, runSecPerWord: 0.8, dueSecPerIte
 const GAP_CAP = 150; // a longer gap between answers was a break: count it as one quick card
 const FIRST_CARD = 20;
 
-// Seconds spent before each answer, from the answers' own times.
+// Seconds spent before each answer: the sprint's own clock where the answer has it (time on the cards
+// since the answer before, lines read in between included), otherwise from the answers' own times.
 export function activeTime(events) {
   const sorted = [...events].sort((a, b) => a.time - b.time);
   let prev = null;
   return sorted.map((e) => {
     const gap = prev && prev.day === e.day ? (e.time - prev.time) / 1000 : Infinity;
     prev = e;
+    if (e.active != null) return { e, sec: e.active };
     return { e, sec: gap <= GAP_CAP ? gap : FIRST_CARD };
   });
 }
@@ -218,28 +220,27 @@ export function paceOf(events, today, byId) {
   };
 }
 
-// How long his right answers take, to tell a slow one (memory.js): the last 100 lines right from the
-// cue alone in each mode, as [words, seconds]. Answers without a time (the app went into the
-// background, or a long break) and slips of the finger are left out.
-export const TIMES_KEPT = 100;
-export function answerTimes(events, byId) {
-  const out = { type: [], say: [] };
-  for (let i = events.length - 1; i >= 0; i--) {
-    if (out.type.length >= TIMES_KEPT && out.say.length >= TIMES_KEPT) break;
-    const e = events[i];
-    const list = out[e.mode];
-    if (!list || list.length >= TIMES_KEPT || !e.pass || e.ms == null || e.help || e.primed || e.relearn || e.slip) continue;
-    const words = byId.get(e.id)?.words;
-    if (words) list.push([words, e.ms / 1000]);
-  }
-  return out;
+// Seconds a word once a typed line is under way: from the first key to the last, over the words
+// after the first. The time before the first key is left out: it holds reading the cue and choosing
+// who speaks, which vary from card to card. null for Say, a line of under 3 words, or no times.
+export function typedPerWord({ mode, ms, firstMs }, item) {
+  if (mode !== 'type' || ms == null || firstMs == null || !item || item.words < 3) return null;
+  return (ms - firstMs) / 1000 / (item.words - 1);
 }
 
-// His usual time for a line of about this many words (from half to twice as many): the middle one
-// of at least 10 such answers, or null until there are 10.
-export function usualSeconds(times, words) {
-  const secs = times.filter(([w]) => w >= words / 2 && w <= words * 2).map(([, sec]) => sec).sort((a, b) => a - b);
-  if (secs.length < 10) return null;
+// His usual typing speed, to tell a slow answer (memory.js): the middle one of his last 100 lines
+// typed right from the cue alone (not slips of the finger), or null until there are 20.
+export const PACE_KEPT = 100;
+export function typingPace(events, byId) {
+  const secs = [];
+  for (let i = events.length - 1; i >= 0 && secs.length < PACE_KEPT; i--) {
+    const e = events[i];
+    if (!e.pass || e.help || e.primed || e.relearn || e.slip) continue;
+    const sec = typedPerWord(e, byId.get(e.id));
+    if (sec != null) secs.push(sec);
+  }
+  if (secs.length < 20) return null;
+  secs.sort((a, b) => a - b);
   const mid = secs.length >> 1;
   return secs.length % 2 ? secs[mid] : (secs[mid - 1] + secs[mid]) / 2;
 }
@@ -391,7 +392,7 @@ export function buildPlan({ model, index, getState, events, settings, today, now
     quota,
     gate,
     pace,
-    times: answerTimes(events, byId),
+    typing: typingPace(events, byId),
     estimate,
     forecast,
     notes,

@@ -1,7 +1,7 @@
 // The Type mode keypad, never the phone's own keyboard: a slim row of digits, three QWERTY rows
 // and ?. One tap per word: its first letter or digit. ? shows the next word, which counts as a miss.
 // A hardware keyboard works too.
-import { h } from './dom.js';
+import { h, tooSoon } from './dom.js';
 import { KEY_ROWS as ROWS } from '../grade.js';
 
 export function keypad(onKey) {
@@ -20,12 +20,14 @@ export function keypad(onKey) {
   );
   // On a touch screen a key types as the finger lifts, and the touch goes no further: two quick taps
   // on one key could otherwise be taken as a double tap to zoom, and the next tap land on the wrong
-  // key. Each finger lifted counts, so two thumbs can type at once. Clicks still work, for VoiceOver,
-  // a mouse or a keyboard.
+  // key. Each finger lifted counts, so two thumbs can type at once. A touch just as the keypad comes
+  // up was the second tap of a double tap on what was there before, and types nothing. Clicks still
+  // work, for VoiceOver, a mouse or a keyboard.
   el.addEventListener('touchend', (e) => {
     const keys = [...e.changedTouches].map((t) => t.target.closest && t.target.closest('button[data-key]')).filter(Boolean);
     if (!keys.length) return;
     e.preventDefault();
+    if (tooSoon()) return;
     for (const b of keys) onKey(b.dataset.key);
   });
   el.addEventListener('click', (e) => {

@@ -3,7 +3,7 @@
 // heard as missed, and back replays it. Without a pack the phone's own voice reads the same tape with
 // the screen kept on, and two big buttons do the marking. Afterwards he checks the list, and the
 // results are saved at the moments they were heard.
-import { h, clear, screen, button, announce, focusHeading, plural } from './dom.js';
+import { h, clear, screen, button, announce, focusHeading, plural, settled } from './dom.js';
 import { buildWalk, trialAt, partAt, reviewRows, walkResults, walkRecords } from '../tape.js';
 import { tapeBlob, createPlayer, keepScreenOn } from '../player.js';
 import { canSpeak, speak, stopSpeaking } from '../tts.js';
@@ -64,7 +64,7 @@ export function showWalk(ctx) {
           ? h('p', {}, 'Say each line in the gap before you hear it. Missed one? Double tap an earbud, or press next. Press back to hear it again.')
           : h('p', {}, 'There is no audio pack yet, so the phone reads aloud with the screen on. Say each line in the gap, then tap Missed or Got it.'),
         h('h2', {}, 'How long?'),
-        h('div', { class: 'choice-grid' }, LENGTHS.map((m) => button(`${m} minutes`, () => build(m), { class: 'btn big' }))),
+        h('div', { class: 'choice-grid' }, LENGTHS.map((m) => button(`${m} minutes`, settled(() => build(m)), { class: 'btn big' }))),
       ],
       [],
     );
@@ -90,7 +90,7 @@ export function showWalk(ctx) {
     });
     if (!tape.trials.length) {
       return page('Nothing to walk yet', [h('p', { class: 'lead' }, 'There is nothing ready to practise on a walk right now.')], [
-        button('Back to Today', () => ctx.go('today'), { class: 'btn primary' }),
+        button('Back to Today', settled(() => ctx.go('today')), { class: 'btn primary' }),
       ]);
     }
     const about = [h('p', {}, `This walk is about ${duration(tape.duration / 60)}.`)];
@@ -183,11 +183,11 @@ export function showWalk(ctx) {
       [
         playBtn,
         h('div', { class: 'row' }, button('Missed that one', () => mark(player.time)), button('Hear it again', () => replay(player.time))),
-        button('End walk', () => {
+        button('End walk', settled(() => {
           const at = player.time;
           player.pause();
           review(tape, plan, marked, started === null ? 0 : at, started, times);
-        }),
+        })),
       ],
       () => {
         player.destroy();
@@ -285,7 +285,7 @@ export function showWalk(ctx) {
       [
         playBtn,
         h('div', { class: 'halves' }, button('Missed', () => tap(true)), button('Got it', () => tap(false))),
-        button('End walk', () => finish(started === null ? 0 : now())),
+        button('End walk', settled(() => finish(started === null ? 0 : now()))),
       ],
       () => {
         playing = false;
@@ -306,9 +306,10 @@ export function showWalk(ctx) {
     teardown();
     teardown = () => {};
     const rows = reviewRows(tape, marked, stoppedAt);
+    let saving = false;
     if (!rows.length) {
       return page('Walk ended', [h('p', { class: 'lead' }, 'Nothing was heard all the way through, so there is nothing to save.')], [
-        button('Back to Today', () => ctx.go('today'), { class: 'btn primary' }),
+        button('Back to Today', settled(() => ctx.go('today')), { class: 'btn primary' }),
       ]);
     }
     const list = h(
@@ -334,7 +335,9 @@ export function showWalk(ctx) {
       'How did it go?',
       [h('p', { class: 'lead' }, `${plural(rows.length, 'line')} on this walk. Tick any you missed; the ones you marked are ticked already.`), list],
       [
-        button('All good apart from the ticked ones', async () => {
+        button('All good apart from the ticked ones', settled(async () => {
+          if (saving) return; // saved once, however many taps
+          saving = true;
           const start = started ?? Date.now();
           const results = walkResults(tape, rows, marked).map((r) => ({ ...r, at: times.heard.has(r.trial) ? (times.heard.get(r.trial) - start) / 1000 : r.at }));
           const records = walkRecords(results, { start, getState: ctx.getState, k: plan.k });
@@ -343,12 +346,12 @@ export function showWalk(ctx) {
           const missed = rows.filter((r) => r.ticked).length;
           announce('Walk saved');
           page('Walk saved', [h('p', { class: 'lead' }, `${plural(rows.length, 'line')}, ${missed ? `${missed} to look at again` : 'all word perfect'}.`)], [
-            button(`Another ${length} minutes`, () => build(length), { class: 'btn primary' }),
-            button('A different length', choose),
-            button('Back to Today', () => ctx.go('today')),
+            button(`Another ${length} minutes`, settled(() => build(length)), { class: 'btn primary' }),
+            button('A different length', settled(choose)),
+            button('Back to Today', settled(() => ctx.go('today'))),
           ]);
-        }, { class: 'btn primary' }),
-        button('Don’t count this one', () => ctx.go('today')),
+        }), { class: 'btn primary' }),
+        button('Don’t count this one', settled(() => !saving && ctx.go('today'))),
       ],
     );
   }

@@ -1,7 +1,7 @@
 // Offline: every app file is cached under one version name and served from the cache first.
 // A new version waits until Off Script asks for it (Update now on Today), so nothing reloads in the
 // middle of a sprint. Change VERSION with every release.
-const VERSION = 'off-script-2026-10-27-7';
+const VERSION = 'off-script-2026-10-27-8';
 const FILES = [
   './',
   'index.html',

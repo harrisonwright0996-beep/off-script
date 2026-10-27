@@ -28,6 +28,19 @@ export function clear(el) {
   return el;
 }
 
+// A touch on something drawn under the finger a moment ago was meant for what was there before: the
+// second tap of a quick double tap. The time of the last touch, and of the last time new controls
+// were drawn (drawn), tell it (tooSoon). Clicks with no touch (VoiceOver, a mouse, a keyboard) always
+// count.
+const SETTLE_MS = 350;
+let touchedAt = 0;
+let drawnAt = 0;
+if (typeof document !== 'undefined') document.addEventListener('touchstart', () => (touchedAt = Date.now()), { capture: true, passive: true });
+export const drawn = () => (drawnAt = Date.now());
+export const tooSoon = () => Date.now() - touchedAt < 1000 && Date.now() - drawnAt < SETTLE_MS;
+// An action that such a touch does not set off.
+export const settled = (fn) => (...args) => (tooSoon() ? undefined : fn(...args));
+
 export const button = (label, onClick, opts = {}) =>
   h('button', { type: 'button', class: opts.class || 'btn', onClick, 'aria-label': opts.aria, disabled: opts.disabled, 'aria-pressed': opts.pressed }, label);
 
@@ -50,6 +63,7 @@ export function screen({ title, back, backLabel = 'Back', actions = [], body = [
     h('h1', { tabindex: '-1' }, title),
     h('div', { class: 'bar-actions' }, actions),
   );
+  drawn();
   return h('div', { class: `screen ${className}` }, head, h('main', { class: 'body' }, body), footer.length ? h('footer', { class: `foot ${footerClass}` }, footer) : null);
 }
 
