@@ -12,8 +12,8 @@
 // first letters, then once more without them.
 // New lines come in rounds: teach a beat's lines (each tried from its cue first, or read), then run the
 // beats resting from the round before and the new beat. One beat is in flight at a time: a new beat
-// is taught only once every line of the others has been right from its cue alone, so a round can be
-// just the runs of the beats resting. Between rounds come the lines still owed a go, then tests of
+// is taught only once every line of the beats resting has been right from its cue alone, so a round
+// can be just their runs. Between rounds come the lines still owed a go, then tests of
 // what is already learned, up to six at a time and the most at risk first, so older lines are
 // checked in between new ones. When nothing new is left, it is tests.
 // On a line of 8 words or more the first letters thin out as it gets stronger: every one, then the
@@ -160,25 +160,27 @@ export function createSession({ model, index, getPlan, getState, settings, scope
 
   const runTask = (beatId) => ({ kind: 'seq', queue: 'beat', beatId, ids: [...beatById.get(beatId).itemIds], pos: 0 });
 
-  // A line in flight: started, but never yet right from the cue alone.
-  const inFlight = (id) => {
-    const s = getState(id);
-    return s.status !== 'new' && s.passes === 0;
-  };
-  // One beat in flight: while a line of another beat is in flight, no new beat is taught. Testing what
-  // was just learned before taking in more helps the next part go in, and keeps the two apart.
-  const othersInFlight = (beatId) => model.items.some((it) => it.beat !== beatId && inFlight(it.id));
+  // A beat in flight: a line of it started, but never yet right from the cue alone. While a beat
+  // resting from the round before is in flight, no new beat is taught: testing what was just learned
+  // before taking in more helps the next part go in, and keeps the two apart. A beat started before
+  // this sprint has a round of its own first, so it rests by then; one part learned (as a chosen
+  // practice can leave it) is finished when its turn comes.
+  const inFlight = (beatId) =>
+    beatById.get(beatId).itemIds.some((id) => {
+      const s = getState(id);
+      return s.status !== 'new' && s.passes === 0;
+    });
 
   // A round: teach one beat, then run the beats resting from the round before, then the new one. A beat
   // started before this sprint and not yet run in it comes first, in a round of its own. While a line
-  // of another beat is in flight, the round is only the runs of the beats resting.
+  // of a beat resting is in flight, the round is only the runs of the beats resting.
   function startRound(beats) {
     const rest = S.rest.filter(live);
     const started = beats.find((id) => live(id) && !rest.includes(id) && !toTeach(id));
     let teach = started ? null : beats.find((id) => live(id) && toTeach(id)) || null;
-    if (teach && othersInFlight(teach)) {
+    if (teach && rest.some(inFlight)) {
       teach = null;
-      if (rest.length && !S.holdSaid) {
+      if (!S.holdSaid) {
         S.message = HOLD_MESSAGE;
         S.holdSaid = true;
       }

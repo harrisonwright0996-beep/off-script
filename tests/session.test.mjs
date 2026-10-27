@@ -564,7 +564,7 @@ test('a long line missed with fewer first letters has every one when it comes ba
   assert.deepEqual(seen, ['help:missed', 'help:all', 'floor:']);
 });
 
-test('the first card of the day with fewer first letters says why, once', () => {
+test('the first card of a sprint with fewer first letters says why, once', () => {
   const app = fakeApp();
   const longs = app.model.items.filter((it) => it.words >= LONG).slice(0, 2).map((it) => it.id);
   learn(app, longs, ONCE);
@@ -625,4 +625,14 @@ test('a beat under way is finished while its own lines are in flight', () => {
   const log = play(app, start(app), { onTest: 'teach' });
   assert.equal(log[0], `new:test:${b1.itemIds[2]}`, 'its lines still to be taught come first');
   assert.ok(log.indexOf(`new:test:${b2.itemIds[0]}`) > log.lastIndexOf(`new:front:${b1.itemIds[3]}`));
+});
+
+test('two beats part learned, each with a line in flight (as a chosen practice can leave them): new lines still come', () => {
+  const app = fakeApp({ settings: { lastNewDay: '2026-10-26' } }); // everything is new today
+  const [b1, b2] = app.model.beats;
+  learn(app, [b1.itemIds[0], b2.itemIds[0]], { status: 'learning', learnedDay: null, passes: 0, helped: 1, stability: null, lastResult: null, hoursAgo: 2 });
+  const log = play(app, start(app), { onTest: 'teach' });
+  assert.equal(log[0], `new:test:${b1.itemIds[1]}`, 'the first beat part learned is finished first');
+  assert.ok(log.indexOf(`new:test:${b2.itemIds[1]}`) > log.indexOf(`new:test:${b1.itemIds[1]}`), 'then the second');
+  for (const it of app.model.items) assert.equal(app.getState(it.id).status, 'review', 'every line learned');
 });
