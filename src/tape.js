@@ -7,10 +7,11 @@
 // run of each scene, the least secure first. After that the tape ends, shorter than asked: a new
 // tape later in the walk picks up whatever has become ready by then. A new beat is taught as a sprint
 // teaches one: each line heard twice, with a gap to say it back, then the beat run from its cue, the
-// first time its lines are asked for; its second run comes after the next beat's first.
+// first time its lines are asked for; its second run comes after the next beat's first. A beat part
+// learned hears only the lines still to be taught, as a sprint teaches only those, and is run whole.
 // While building, it assumes every recall is right; the real results are saved after the walk, at
 // the moments they were heard.
-import { applyResult } from './state.js';
+import { applyResult, needsTeaching } from './state.js';
 import { beatStage, extraRunsOf, phaseOf, readyLines, testsOf, REVIEW_BURST } from './plan.js';
 import { dayKey } from './dates.js';
 
@@ -126,23 +127,27 @@ export function buildWalk({ model, index, manifest, getState, settings, plan, st
     sequence(ids, 'beat', false, true);
   };
 
-  // A new beat: from its first line's cue, each line heard twice, with a gap after each to say it
-  // back; then the beat run from its first cue, the first time each line is asked for, a few minutes
-  // after it was heard. Its second run waits for the next beat (or for the end of new beats). A beat
-  // is learned whole: if it and its second run do not fit, it is left for another time.
+  // A new beat: each line still to be taught (never yet right from its cue) heard twice from its
+  // cue, with a gap after each to say it back; lines already right once are not heard again, as a
+  // sprint does not teach them again. Then the whole beat run from its first cue, the first time each
+  // new line is asked for, a few minutes after it was heard. Its second run waits for the next beat
+  // (or for the end of new beats). A beat is learned whole: if it and its second run do not fit, it
+  // is left for another time.
   const learnBeat = (beat) => {
     const ids = beat.itemIds.filter(usable);
     if (!ids.length) return true;
     const mark = { steps: steps.length, trials: trials.length, parts: parts.length, heard: heard.length, t, lastLabel, sim: new Map(sim) };
     part(`New: ${heading(beat.scene)}`);
-    cue(byId.get(ids[0]), false);
-    for (const id of ids) {
+    let prev = null;
+    for (const id of ids.filter((x) => needsTeaching(stateOf(x)))) {
       const it = byId.get(id);
+      if (!prev || prev.index !== it.index - 1 || prev.scene !== it.scene) cue(it, false);
       heard.push({ id, at: t });
       for (let n = 0; n < 2; n++) {
         answer(it);
         silence(gapSeconds(it.words, gap));
       }
+      prev = it;
     }
     const from = t;
     sequence(ids, 'beat', false, true);
@@ -245,10 +250,12 @@ export function walkResults(tape, rows, marked) {
 // After the walk: the results as events and new states, in order, for the app to save, each timed
 // at the moment its answer was heard. start: when the tape began playing (ms). Each event carries the
 // seconds of tape since the answer before (active), new lines heard in between included, so the
-// whole walk counts as practice.
+// whole walk counts as practice. Rounded on the running total, so that however long the walk, they
+// add up to the tape time.
 export function walkRecords(results, { start, getState, k = 1 }) {
   const states = new Map();
   let prevAt = 0;
+  const tenths = (x) => Math.round(x * 10) / 10;
   return results.map((r) => {
     const time = start + r.at * 1000;
     const day = dayKey(new Date(time));
@@ -257,8 +264,8 @@ export function walkRecords(results, { start, getState, k = 1 }) {
     states.set(r.id, state);
     const event = { time, day, id: r.id, pass: r.pass, mode: 'walk', queue: r.queue, misses: r.pass ? 0 : 1, speakerWrong: false, relearn: false, prev };
     if (r.tapeAt != null) {
-      event.active = Math.round((r.tapeAt - prevAt) * 10) / 10;
-      prevAt = r.tapeAt;
+      event.active = tenths(tenths(r.tapeAt) - prevAt);
+      prevAt = tenths(r.tapeAt);
     }
     return { event, state };
   });

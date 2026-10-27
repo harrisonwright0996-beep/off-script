@@ -5,6 +5,7 @@ import { gapSeconds, buildWalk, trialAt, partAt, reviewRows, walkResults, walkRe
 import { readAudioPack, packFit, PackError } from '../src/audiopack.js';
 import { silentMp3, buildFixturePack } from './fixtures/audio-pack.mjs';
 import { fakeApp, learn } from './helpers.mjs';
+import { newState } from '../src/state.js';
 import { strToU8, zipSync } from '../vendor/fflate.js';
 
 test('frame headers: MPEG 2 Layer III, 22,050 Hz, mono, 32 kbps is 104 bytes, 105 with padding', () => {
@@ -102,6 +103,26 @@ test('a new beat on a walk is taught as a sprint teaches one: each line heard tw
   assert.ok(runs(b)[b.length].start > runs(a)[a.length].start);
 });
 
+test('a beat part learned on a walk hears only its lines still to be taught, each from its cue, and a beat with none left is just run', () => {
+  const { app, manifest } = walkApp();
+  const [a, b] = [app.model.beats[2].itemIds, app.model.beats[3].itemIds];
+  // Answered once a few minutes ago: right, so not taught again, or missed, so taught again.
+  const once = (id, pass) =>
+    app.states.set(id, { ...newState(id), status: 'learning', firstDay: app.today, passes: pass ? 1 : 0, misses: pass ? 0 : 1, passDays: pass ? [app.today] : [], missDays: pass ? [] : [app.today], stability: pass ? 1 : null, lastResult: pass ? 'pass' : 'miss', lastDay: app.today, lastTime: app.clock - 6 * 60000 });
+  once(a[0], true);
+  once(a[1], true);
+  once(a[4], false);
+  for (const id of b) once(id, true);
+  const tape = walk(app, manifest, 3600);
+  assert.deepEqual(tape.heard.map((x) => x.id), a.slice(2), 'only the lines still to be taught are heard');
+  const timed = timeline(tape);
+  const opening = timed.findIndex((s) => s.clip === manifest.items[a[2]].line.file);
+  assert.ok(timed.slice(opening - 2, opening).some((s) => s.clip === manifest.items[a[2]].cue.file), 'the first one heard comes after its own cue');
+  const runs = (ids) => tape.trials.filter((tr) => ids.includes(tr.id) && tr.queue === 'beat').map((tr) => tr.id);
+  assert.deepEqual(runs(a), [...a, ...a], 'the beat still runs whole, twice');
+  assert.deepEqual(runs(b), [...b, ...b], 'a beat with nothing left to teach is just run, twice');
+});
+
 test('a walk of any length teaches a beat whole, both runs, or leaves it for another time, and keeps to the length asked', () => {
   const { app, manifest } = walkApp();
   for (const seconds of [120, 300, 480, 600, 900, 1200, 1800]) {
@@ -126,7 +147,7 @@ test('after a walk its results are saved at the moments heard, and a later walk 
   // included, so Practised today counts the whole walk.
   assert.equal(records[0].event.active, Math.round(tape.trials[0].answerEnd * 10) / 10);
   const total = records.reduce((n, rec) => n + rec.event.active, 0);
-  assert.ok(Math.abs(total - tape.trials.at(-1).answerEnd) < 1, `${total} against ${tape.trials.at(-1).answerEnd}`);
+  assert.ok(Math.abs(total - tape.trials.at(-1).answerEnd) < 0.06, `${total} against ${tape.trials.at(-1).answerEnd}`);
   const newIds = [...app.model.beats[2].itemIds, ...app.model.beats[3].itemIds]; // today's beat and a head start
   assert.ok(newIds.every((id) => app.getState(id).status === 'review'));
   app.wait(90);
