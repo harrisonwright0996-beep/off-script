@@ -263,6 +263,14 @@ test('a long line right from its cue once: first letters only at the start of ea
     return copy.textContent;
   });
   expect(seen).toBe(want);
+  // What VoiceOver reads: each blank as "blank", with its punctuation for the pauses.
+  const heard = await line.evaluate((p) => {
+    const copy = p.cloneNode(true);
+    copy.querySelectorAll('[aria-hidden="true"]').forEach((n) => n.remove());
+    return copy.textContent.replace(/\s+/g, ' ').trim();
+  });
+  const squash = (x) => x.replace(/\s+/g, ' ').trim();
+  expect(heard).toBe(squash(joinTokens(it.tokens, (t, i) => (t.k === null || starts.has(i) ? firstLettersOf(t) : ` ${blankOf(t).replace('_', 'blank')} `))));
   await shot(page, 'card-help-phrases');
   await page.getByRole('button', { name: 'Reveal' }).click();
   await page.getByRole('button', { name: 'Done' }).click();

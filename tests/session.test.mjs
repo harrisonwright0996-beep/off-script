@@ -564,7 +564,7 @@ test('a long line missed with fewer first letters has every one when it comes ba
   assert.deepEqual(seen, ['help:missed', 'help:all', 'floor:']);
 });
 
-test('the first card of a sprint with fewer first letters says why, once', () => {
+test('the first card of the day with fewer first letters says why, once', () => {
   const app = fakeApp();
   const longs = app.model.items.filter((it) => it.words >= LONG).slice(0, 2).map((it) => it.id);
   learn(app, longs, ONCE);

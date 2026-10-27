@@ -35,7 +35,7 @@ export function lettersView(tokens, shown) {
   const out = [];
   tokens.forEach((t, i) => {
     if (t.k === null || shown.has(i)) out.push(firstLettersOf(t));
-    else out.push(h('span', { class: 'blank' }, h('span', { 'aria-hidden': 'true' }, blankOf(t)), h('span', { class: 'visually-hidden' }, ' blank ')));
+    else out.push(h('span', { class: 'blank' }, h('span', { 'aria-hidden': 'true' }, blankOf(t)), h('span', { class: 'visually-hidden' }, ` ${blankOf(t).replace('_', 'blank')} `)));
     if (i < tokens.length - 1) out.push(t.a);
   });
   return out;
@@ -264,7 +264,8 @@ export async function showSprint(ctx, { scope = 'all', minutes = null, custom = 
     const shown = lettersShown(item.tokens, level, level === 'missed' ? missedBefore(item.id) : []);
     const answerArea = h('div', { class: 'answer-area', role: 'group', tabindex: '-1', 'aria-label': 'Your line' }, h('p', { class: 'line' }, lettersView(item.tokens, shown)));
     const footBox = h('div', { class: 'stack-foot' });
-    const prompt = level === 'all' ? 'Say it aloud from the first letters, then reveal it.' : 'Say it aloud, blanks too, then reveal it.';
+    const blanks = item.tokens.some((t, i) => t.k !== null && !shown.has(i));
+    const prompt = blanks ? 'Say it aloud, blanks too, then reveal it.' : 'Say it aloud from the first letters, then reveal it.';
     frame(c, [cueBlock(c.cue), h('p', { class: 'speaker' }, speakerName(item)), answerArea], [footBox]);
     sayCheck(item.tokens, answerArea, footBox, prompt, (misses, ms) => finish(c, makeResult({ misses, mode: 'say', ms })));
   }

@@ -65,6 +65,13 @@ export function keyedCount(tokens) {
   return tokens.filter((t) => t.k !== null).length;
 }
 
+// The punctuation after a word's last letter or digit. An apostrophe on its own (goin’, the
+// students’) is part of the word.
+function tailOf(text) {
+  const m = text.match(/[^\p{L}\p{N}]+$/u);
+  return m && !/^['’]+$/u.test(m[0]) ? m[0] : '';
+}
+
 // The Session 10 "back of the sheet" view: first letters, keeping capitals and punctuation;
 // numbers stay as written.
 export function firstLettersOf(token) {
@@ -72,9 +79,7 @@ export function firstLettersOf(token) {
   const i = token.d.search(ALNUM);
   const first = token.d[i];
   if (/\p{N}/u.test(first)) return token.d;
-  const lead = token.d.slice(0, i);
-  const tail = token.d.slice(i).match(/[^\p{L}\p{N}'’]+$/u);
-  return lead + first + (tail ? tail[0] : '');
+  return token.d.slice(0, i) + first + tailOf(token.d.slice(i + 1));
 }
 
 export function joinTokens(tokens, view = (t) => t.d) {
@@ -90,16 +95,17 @@ export function firstLettersLine(tokens) {
 export function blankOf(token) {
   if (token.k === null) return token.d;
   const i = token.d.search(ALNUM);
-  const tail = token.d.slice(i).match(/[^\p{L}\p{N}'’]+$/u);
-  return token.d.slice(0, i) + '_' + (tail ? tail[0] : '');
+  return token.d.slice(0, i) + '_' + tailOf(token.d.slice(i + 1));
 }
 
 // Where a phrase starts: at the first word, after a word ending in a pause (a comma, full stop or
-// other stop, a closing bracket or quote, or a dash), after a dash between two words (not a hyphen)
-// and after a direction. In a long phrase every seventh word starts again, so that no more than six
-// blanks come in a row. Token indices.
-const PAUSE = /[,;:.!?…)\]"”—–-]$/u;
+// other stop, a closing bracket or quote, or a dash, with any closing single quote after it), after
+// a dash between two words (not a hyphen), at a dash joined to the next word, and after a direction.
+// In a long phrase every seventh word starts again, so that no more than six blanks come in a row.
+// Token indices.
+const PAUSE = /[,;:.!?…)\]"”—–-]['’]*$/u;
 const DASH = /[–—]/u;
+const LEAD_DASH = /^[-–—]/u;
 export const MAX_BLANKS = 6;
 
 export function phraseStarts(tokens) {
@@ -111,7 +117,7 @@ export function phraseStarts(tokens) {
       start = true;
       return;
     }
-    if (start || run >= MAX_BLANKS) {
+    if (start || run >= MAX_BLANKS || LEAD_DASH.test(t.d)) {
       starts.add(i);
       run = 0;
     } else run += 1;

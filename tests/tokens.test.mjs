@@ -43,6 +43,7 @@ test('joining tokens gives the line back', () => {
 test('first letters view keeps capitals and punctuation; numbers stay whole', () => {
   assert.equal(firstLettersLine(tokenize('Tickets cost £35, and that’s the well-known price.')), 'T c £35, a t t w-k p.');
   assert.equal(firstLettersLine(tokenize('Say “please” first.')), 'S “p” f.');
+  assert.equal(firstLettersLine(tokenize('‘Is it not?’ the students’ teacher asked.')), '‘I i n?’ t s t a.', 'a stop before a closing single quote is kept; an apostrophe alone is part of the word');
 });
 
 test('phrases start at the first word, after a pause mark, a dash between words or a direction', () => {
@@ -50,6 +51,12 @@ test('phrases start at the first word, after a pause mark, a dash between words 
   assert.deepEqual(t.map((x) => x.d), ['On', 'my', 'way…', 'wait', 'what?', '[Turns.]', 'No,', 'well', 'known', 'places,', 'I', 'said.']);
   assert.deepEqual([...phraseStarts(t)], [0, 3, 4, 6, 7, 10], 'not after the hyphen in well-known');
   assert.deepEqual([...phraseStarts(tokenize('Wait - what now'))], [0, 1], 'a spaced dash is a pause too');
+});
+
+test('a phrase starts after a pause mark inside a closing single quote, and at a dash joined to the next word', () => {
+  assert.deepEqual([...phraseStarts(tokenize('‘Hello,’ she said, ‘not now.’ Then home.'))], [0, 1, 3, 5]);
+  assert.deepEqual([...phraseStarts(tokenize('Wait —what did you say'))], [0, 1]);
+  assert.deepEqual([...phraseStarts(tokenize('the students’ bags were here'))], [0], 'an apostrophe ending a word is not a pause');
 });
 
 test('in a long phrase every seventh word has its letter, so no more than six blanks come in a row', () => {
@@ -69,6 +76,7 @@ test('a blank keeps the word’s punctuation, as the first letters do', () => {
   const [a, b, c] = tokenize('“Please,” she said.');
   assert.deepEqual([blankOf(a), blankOf(b), blankOf(c)], ['“_,”', '_', '_.']);
   assert.equal(blankOf(tokenize('£35,')[0]), '£_,');
+  assert.deepEqual(tokenize('‘Is it not?’ the students’ teacher asked.').map(blankOf), ['‘_', '_', '_?’', '_', '_', '_', '_.']);
   const t = tokenize('(Aside.) Not now.');
   assert.equal(blankOf(t[0]), '[Aside.]', 'a direction is shown as it is');
   const shown = lettersShown(tokenize('Tickets cost £35, and that’s the price.'), 'phrases');
