@@ -145,11 +145,14 @@ async function speak(voice, job, work, name) {
   return new Uint8Array(await readFile(mp3));
 }
 
+const keyOf = (job) => fnv1a(`${job.voice}|${job.text}|${RATE}|${BITRATE}`);
+
 // Renders one clip (or takes it from the cache) and returns its frames and length. A voice can
-// make no sound now and then (while macOS updates it), so a silent clip is tried twice more and
-// then read by the narrator instead. Only clips in their own voice are cached.
+// make no sound now and then (while macOS updates it), and say can fail to write a file, so such a
+// clip is tried twice more and then read by the narrator instead. Only clips in their own voice
+// are cached.
 async function render(job, work, narrator) {
-  const key = fnv1a(`${job.voice}|${job.text}|${RATE}|${BITRATE}`);
+  const key = keyOf(job);
   const cached = join(CACHE, `${key}.mp3`);
   if (existsSync(cached)) {
     try {
@@ -162,9 +165,10 @@ async function render(job, work, narrator) {
   const tries = job.silence || job.voice === narrator ? [job.voice, job.voice, job.voice] : [job.voice, job.voice, job.voice, narrator];
   for (const [i, voice] of tries.entries()) {
     if (i > 0) await new Promise((done) => setTimeout(done, 1000 * i));
-    const bytes = await speak(voice, job, work, `${key}-${i}`);
     let mp3;
+    let bytes;
     try {
+      bytes = await speak(voice, job, work, `${key}-${i}`);
       mp3 = checked(bytes);
     } catch {
       continue;
@@ -247,9 +251,14 @@ export async function main(argv) {
   let stoodIn = 0;
   if (speaking.length < unique.length) console.log(`${unique.length - speaking.length} of ${unique.length} voices made no sound, so they are not used this time.`);
   console.log(`Rendering ${jobs.length} clips for ${model.items.length} lines, ${speakers.size} speakers and ${model.scenes.length} scenes.`);
+  // A cue is often the line before it, in the same voice: each different clip is made once, so two
+  // jobs never write the same files at the same time.
+  const renders = new Map();
   try {
     await pool(jobs, opt.jobs, async (job) => {
-      const r = await render(job, work, voices.narrator);
+      const key = keyOf(job);
+      if (!renders.has(key)) renders.set(key, render(job, work, voices.narrator));
+      const r = await renders.get(key);
       job.duration = r.duration;
       files[job.file] = r.bytes;
       if (r.fromCache) cachedCount += 1;
