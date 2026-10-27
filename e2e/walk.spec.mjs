@@ -8,6 +8,7 @@ test('audio pack: import, build a walk tape that can play, mark a line, review a
   await importPack(page);
   await page.getByRole('button', { name: 'Walk' }).click();
   await expect(page.getByText('keep one earbud out', { exact: false })).toBeVisible();
+  await expect(page.getByText('A new line comes twice first: say it back in the gap after it.', { exact: false })).toBeVisible();
   await shot(page, 'walk-choose');
   await page.getByRole('button', { name: '15 minutes' }).click();
   await expect(page.getByRole('button', { name: 'Play' })).toBeVisible();

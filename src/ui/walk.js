@@ -63,6 +63,7 @@ export function showWalk(ctx) {
         pack
           ? h('p', {}, 'Say each line in the gap before you hear it. Missed one? Double tap an earbud, or press next. Press back to hear it again.')
           : h('p', {}, 'There is no audio pack yet, so the phone reads aloud with the screen on. Say each line in the gap, then tap Missed or Got it.'),
+        h('p', {}, 'A new line comes twice first: say it back in the gap after it. A few minutes later its beat runs from the cue.'),
         h('h2', {}, 'How long?'),
         h('div', { class: 'choice-grid' }, LENGTHS.map((m) => button(`${m} minutes`, settled(() => build(m)), { class: 'btn big' }))),
       ],

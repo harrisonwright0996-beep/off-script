@@ -62,8 +62,8 @@ test('a walk tape runs like a sprint: what is ready, then new beats, then one ex
   assert.equal(tape.missing, 0);
   const total = tape.steps.reduce((n, s) => n + s.dur, 0);
   assert.ok(Math.abs(total - tape.duration) < 1e-6);
-  const firstNew = tape.trials.find((t) => t.queue === 'new');
-  assert.deepEqual(tape.trials.filter((t) => t.id === firstNew.id).slice(0, 3).map((t) => t.queue), ['new', 'beat', 'beat']);
+  const firstNew = tape.trials.find((t) => t.id === tape.heard[0].id);
+  assert.deepEqual(tape.trials.filter((t) => t.id === firstNew.id).slice(0, 3).map((t) => t.queue), ['beat', 'beat', 'run']);
   assert.ok(tape.duration < 3600, 'it stops once everything useful for now is on it');
   const scenes = tape.parts.filter((p) => p.label.startsWith('Run:')).map((p) => p.label);
   assert.ok(scenes.length <= 2 + 3, 'no scene is run over and over');
@@ -72,18 +72,68 @@ test('a walk tape runs like a sprint: what is ready, then new beats, then one ex
   assert.equal(short.parts[0].label, 'Run: Prologue');
 });
 
+// A tape with each step's start time.
+const timeline = (tape) => {
+  let t = 0;
+  return tape.steps.map((s) => ({ ...s, at: (t += s.dur) - s.dur }));
+};
+
+test('a new beat on a walk is taught as a sprint teaches one: each line heard twice, then the beat run, and its second run after the next beat', () => {
+  const { app, manifest } = walkApp();
+  const tape = walk(app, manifest, 3600);
+  const [a, b] = [app.model.beats[2].itemIds, app.model.beats[3].itemIds]; // today's beat and a head start
+  assert.ok(!tape.trials.some((tr) => tr.queue === 'new'), 'no recall straight after hearing a line');
+  assert.deepEqual(tape.heard.map((x) => x.id), [...a, ...b], 'every new line heard, in script order');
+  const timed = timeline(tape);
+  const runs = (ids) => tape.trials.filter((tr) => ids.includes(tr.id) && tr.queue === 'beat');
+  for (const ids of [a, b]) {
+    const trials = runs(ids);
+    assert.deepEqual(trials.map((tr) => tr.id), [...ids, ...ids], 'two runs of the beat, each in script order');
+    assert.ok(trials[0].start > tape.heard.find((x) => x.id === ids.at(-1)).at, 'the first recall comes once the whole beat is heard');
+    for (const id of ids) {
+      const first = trials.find((tr) => tr.id === id);
+      assert.equal(timed.filter((s) => s.clip === manifest.items[id].line.file && s.at < first.start).length, 2, 'each line heard twice before it is first recalled');
+    }
+  }
+  // The beat opens with its first line's cue, and its second run waits until the next beat has run once.
+  const opening = timed.findIndex((s) => s.clip === manifest.items[a[0]].line.file);
+  assert.ok(timed.slice(opening - 2, opening).some((s) => s.clip === manifest.items[a[0]].cue.file));
+  assert.ok(runs(a)[a.length].start > runs(b)[0].start);
+  assert.ok(runs(b)[b.length].start > runs(a)[a.length].start);
+});
+
+test('a walk of any length teaches a beat whole, both runs, or leaves it for another time, and keeps to the length asked', () => {
+  const { app, manifest } = walkApp();
+  for (const seconds of [120, 300, 480, 600, 900, 1200, 1800]) {
+    const tape = walk(app, manifest, seconds);
+    for (const { id } of tape.heard) assert.equal(tape.trials.filter((tr) => tr.id === id && tr.queue === 'beat').length, 2, `${seconds} s: both runs of every line taught`);
+    assert.ok(tape.duration <= seconds + 30, `${seconds} s: ${Math.round(tape.duration)} s long`);
+  }
+  // On a first walk, with nothing to check, the first beat is taught even if it runs over.
+  const fresh = fakeApp();
+  const first = buildWalk({ model: fresh.model, index: fresh.index, manifest: readAudioPack(buildFixturePack(fresh.model)).manifest, getState: fresh.getState, settings: fresh.settings, plan: fresh.plan(), start: fresh.clock, seconds: 60 });
+  assert.deepEqual(first.heard.map((x) => x.id), fresh.model.beats[0].itemIds);
+  assert.equal(first.trials.length, 2 * fresh.model.beats[0].itemIds.length);
+});
+
 test('after a walk its results are saved at the moments heard, and a later walk brings the new lines back', () => {
   const { app, manifest } = walkApp();
   const tape = walk(app, manifest, 3600);
   const records = walkRecords(walkResults(tape, reviewRows(tape, new Set()), new Set()), { start: app.clock, getState: app.getState });
   records.forEach((rec) => app.save(rec));
   assert.equal(records[0].event.time, app.clock + tape.trials[0].answerEnd * 1000);
+  // Each answer carries the seconds of tape since the answer before, new lines heard in between
+  // included, so Practised today counts the whole walk.
+  assert.equal(records[0].event.active, Math.round(tape.trials[0].answerEnd * 10) / 10);
+  const total = records.reduce((n, rec) => n + rec.event.active, 0);
+  assert.ok(Math.abs(total - tape.trials.at(-1).answerEnd) < 1, `${total} against ${tape.trials.at(-1).answerEnd}`);
   const newIds = [...app.model.beats[2].itemIds, ...app.model.beats[3].itemIds]; // today's beat and a head start
   assert.ok(newIds.every((id) => app.getState(id).status === 'review'));
   app.wait(90);
   const later = walk(app, manifest, 3600);
   assert.ok(newIds.includes(later.trials[0].id), 'an hour and a half on, the new lines come back first');
-  assert.equal(later.parts[0].label, 'Run: Scene 3: Landfall', 'the head start, learned last and checked least, is the most at risk');
+  const order = later.parts.map((p) => p.label);
+  for (const scene of ['Run: Scene 1: The Harbour', 'Run: Scene 3: Landfall']) assert.ok(order.indexOf(scene) < order.indexOf('Run: Prologue'), 'the scenes with new lines, more at risk, before the Prologue');
 });
 
 test('marking: a tap in the two seconds after an answer marks that answer', () => {
@@ -102,9 +152,9 @@ test('review and results: ticks become misses, everything else passes, unheard l
   assert.deepEqual(rows.map((r) => [r.id, r.ticked]), [['a', false], ['b', true]]);
   rows[0].ticked = true; // ticked in the review with no mark: its last trial is the miss
   assert.deepEqual(walkResults(tape, rows, marked), [
-    { trial: 0, id: 'a', queue: 'run', pass: true, at: 5 },
-    { trial: 1, id: 'b', queue: 'run', pass: false, at: 10 },
-    { trial: 2, id: 'a', queue: 'beat', pass: false, at: 15 },
+    { trial: 0, id: 'a', queue: 'run', pass: true, at: 5, tapeAt: 5 },
+    { trial: 1, id: 'b', queue: 'run', pass: false, at: 10, tapeAt: 10 },
+    { trial: 2, id: 'a', queue: 'beat', pass: false, at: 15, tapeAt: 15 },
   ]);
 });
 
@@ -116,7 +166,7 @@ test('a pack from another script: lines without clips are skipped and counted', 
   assert.ok(tape.trials.length > 0);
 });
 
-test('a cue made longer plays the lines before it from the pack; a new line just heard keeps its usual cue', () => {
+test('a cue made longer plays the lines before it from the pack; a new beat opens with its usual cue', () => {
   const app = fakeApp();
   const { manifest } = readAudioPack(buildFixturePack(app.model));
   const ids = app.model.scenes[1].itemIds;
@@ -131,6 +181,10 @@ test('a cue made longer plays the lines before it from the pack; a new line just
   const check = tape.trials.find((tr) => tr.id === ids[3]);
   const clips = (id) => manifest.items[id];
   assert.deepEqual(before(check), [clips(ids[1]).cue.file, clips(ids[1]).line.file, clips(ids[2]).line.file]);
-  const heard = tape.trials.find((tr) => tr.id === second && tr.queue === 'new');
-  assert.equal(before(heard).at(-1), clips(second).cue.file);
+  // The new beat opens with the start of the Prologue, and in its runs the second line follows the
+  // first with no cue of its own.
+  const timed2 = timeline(tape);
+  const opening = timed2.findIndex((s) => s.clip === clips(first).line.file);
+  assert.ok(timed2.slice(opening - 2, opening).some((s) => s.clip === manifest.headings[0].file));
+  for (const tr of tape.trials.filter((x) => x.id === second)) assert.deepEqual(before(tr), []);
 });

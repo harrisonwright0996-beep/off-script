@@ -5,7 +5,9 @@
 // ready at that point in the walk (from the forgetting curve), up to six at a time, in between new
 // beats (today's, then a head start); then tests only; then, if the walk is longer still, one extra
 // run of each scene, the least secure first. After that the tape ends, shorter than asked: a new
-// tape later in the walk picks up whatever has become ready by then.
+// tape later in the walk picks up whatever has become ready by then. A new beat is taught as a sprint
+// teaches one: each line heard twice, with a gap to say it back, then the beat run from its cue, the
+// first time its lines are asked for; its second run comes after the next beat's first.
 // While building, it assumes every recall is right; the real results are saved after the walk, at
 // the moments they were heard.
 import { applyResult } from './state.js';
@@ -31,6 +33,8 @@ export function buildWalk({ model, index, manifest, getState, settings, plan, st
   let missing = 0;
   let lastLabel = null;
   const skipped = new Set();
+  const heard = []; // each new line, when it is first heard: { id, at }
+  let pending = null; // the beat whose second run is still to come: { scene, ids, sec }
   const sim = new Map(); // states as they will be if every recall on the tape is right
   const stateOf = (id) => sim.get(id) || getState(id);
 
@@ -54,8 +58,7 @@ export function buildWalk({ model, index, manifest, getState, settings, plan, st
   };
   // A line's cue: the scene heading or the cue clip. A cue made longer so that only one line fits
   // (uniqueCues) plays the first lead line's cue and then each lead line, from clips the pack already
-  // has, or the usual clip if any of them is missing. Not when a new line is first recalled, just after
-  // it was heard.
+  // has, or the usual clip if any of them is missing. Not to open a new beat, just before it is heard.
   const cue = (it, long = true) => {
     const more = long && index.cues && index.cues.get(it.id);
     const first = more && byId.get(more.lead[0]);
@@ -80,7 +83,7 @@ export function buildWalk({ model, index, manifest, getState, settings, plan, st
     sim.set(it.id, applyResult(stateOf(it.id), { pass: true, day: dayKey(new Date(time)), time, mode: 'walk', k }));
     silence(0.3);
   };
-  const full = () => t >= seconds;
+  const full = () => t + (pending ? pending.sec : 0) >= seconds; // time is kept for a second run to come
   const part = (label) => {
     if (label !== lastLabel) parts.push({ label, start: t });
     lastLabel = label;
@@ -114,35 +117,49 @@ export function buildWalk({ model, index, manifest, getState, settings, plan, st
     }
   };
 
-  // A new beat: listen, repeat, listen, repeat, recall from the cue, line by line; then the beat run
-  // twice from its first cue. A beat is learned whole: if it does not fit, it is left for another time.
+  // The beat before's second run, once something else has come between its runs.
+  const secondRun = () => {
+    if (!pending) return;
+    const { scene, ids } = pending;
+    pending = null;
+    part(`New: ${heading(scene)}`);
+    sequence(ids, 'beat', false, true);
+  };
+
+  // A new beat: from its first line's cue, each line heard twice, with a gap after each to say it
+  // back; then the beat run from its first cue, the first time each line is asked for, a few minutes
+  // after it was heard. Its second run waits for the next beat (or for the end of new beats). A beat
+  // is learned whole: if it and its second run do not fit, it is left for another time.
   const learnBeat = (beat) => {
     const ids = beat.itemIds.filter(usable);
     if (!ids.length) return true;
-    const mark = { steps: steps.length, trials: trials.length, parts: parts.length, t, lastLabel, sim: new Map(sim) };
+    const mark = { steps: steps.length, trials: trials.length, parts: parts.length, heard: heard.length, t, lastLabel, sim: new Map(sim) };
     part(`New: ${heading(beat.scene)}`);
+    cue(byId.get(ids[0]), false);
     for (const id of ids) {
       const it = byId.get(id);
-      const from = t;
+      heard.push({ id, at: t });
       for (let n = 0; n < 2; n++) {
         answer(it);
         silence(gapSeconds(it.words, gap));
       }
-      cue(it, false);
-      recall(it, 'new', from);
     }
+    const from = t;
     sequence(ids, 'beat', false, true);
-    sequence(ids, 'beat', false, true);
-    if (t > seconds && mark.trials > 0) {
+    const sec = t - from;
+    if (t + sec + (pending ? pending.sec : 0) > seconds && mark.trials > 0) {
       steps.length = mark.steps;
       trials.length = mark.trials;
       parts.length = mark.parts;
+      heard.length = mark.heard;
       t = mark.t;
       lastLabel = mark.lastLabel;
       sim.clear();
       for (const [id, s] of mark.sim) sim.set(id, s);
       return false;
     }
+    secondRun();
+    pending = { scene: beat.scene, ids, sec };
     return true;
   };
 
@@ -164,8 +181,10 @@ export function buildWalk({ model, index, manifest, getState, settings, plan, st
       tests += trials.length - before;
     } else if (!newDone) {
       const id = beats.find((b) => !taught.has(b) && beatStage(beatById.get(b), stateOf) !== 'done');
-      if (!id || !learnBeat(beatById.get(id))) newDone = true;
-      else taught.add(id);
+      if (!id || !learnBeat(beatById.get(id))) {
+        newDone = true;
+        secondRun(); // the last new beat's second run, before checks only
+      } else taught.add(id);
       tests = 0;
       continue;
     } else {
@@ -176,7 +195,8 @@ export function buildWalk({ model, index, manifest, getState, settings, plan, st
     }
     if (trials.length === before) break; // nothing more can be added
   }
-  return { steps, trials, parts, duration: t, missing };
+  secondRun();
+  return { steps, trials, parts, heard, duration: t, missing };
 }
 
 // Which trial a double tap at this moment means: the earliest one whose window (gap, answer and
@@ -206,7 +226,8 @@ export function reviewRows(tape, marked, stoppedAt = Infinity) {
   return [...rows.values()];
 }
 
-// Results to save, in tape order, each at the moment its answer was heard (seconds into the tape).
+// Results to save, in tape order, each at the moment its answer was heard (seconds into the tape, at
+// and tapeAt; the Walk screen moves at to the moment by the clock, if the tape was paused).
 // A ticked row with no marked trial gets its last trial missed; an unticked row passes every trial.
 export function walkResults(tape, rows, marked) {
   const missed = new Set();
@@ -218,19 +239,27 @@ export function walkResults(tape, rows, marked) {
   return rows
     .flatMap((row) => row.trials)
     .sort((a, b) => a - b)
-    .map((i) => ({ trial: i, id: tape.trials[i].id, queue: tape.trials[i].queue, pass: !missed.has(i), at: tape.trials[i].answerEnd }));
+    .map((i) => ({ trial: i, id: tape.trials[i].id, queue: tape.trials[i].queue, pass: !missed.has(i), at: tape.trials[i].answerEnd, tapeAt: tape.trials[i].answerEnd }));
 }
 
 // After the walk: the results as events and new states, in order, for the app to save, each timed
-// at the moment its answer was heard. start: when the tape began playing (ms).
+// at the moment its answer was heard. start: when the tape began playing (ms). Each event carries the
+// seconds of tape since the answer before (active), new lines heard in between included, so the
+// whole walk counts as practice.
 export function walkRecords(results, { start, getState, k = 1 }) {
   const states = new Map();
+  let prevAt = 0;
   return results.map((r) => {
     const time = start + r.at * 1000;
     const day = dayKey(new Date(time));
     const prev = states.get(r.id) || getState(r.id);
     const state = applyResult(prev, { pass: r.pass, day, time, mode: 'walk', k });
     states.set(r.id, state);
-    return { event: { time, day, id: r.id, pass: r.pass, mode: 'walk', queue: r.queue, misses: r.pass ? 0 : 1, speakerWrong: false, relearn: false, prev }, state };
+    const event = { time, day, id: r.id, pass: r.pass, mode: 'walk', queue: r.queue, misses: r.pass ? 0 : 1, speakerWrong: false, relearn: false, prev };
+    if (r.tapeAt != null) {
+      event.active = Math.round((r.tapeAt - prevAt) * 10) / 10;
+      prevAt = r.tapeAt;
+    }
+    return { event, state };
   });
 }
