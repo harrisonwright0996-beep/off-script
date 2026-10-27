@@ -1,7 +1,7 @@
 // Accessibility: axe on every screen, in every theme. No serious or critical problems allowed.
 import { test, expect } from '@playwright/test';
 import { createRequire } from 'node:module';
-import { importScript, answerCard, keysOf } from './helpers.mjs';
+import { importScript, answerCard, keysOf, seedOnce } from './helpers.mjs';
 
 const AXE = createRequire(import.meta.url).resolve('axe-core/axe.min.js');
 test.use({ bypassCSP: true }); // only so axe itself can be added to the page
@@ -136,3 +136,15 @@ for (const theme of ['cream', 'light', 'dark']) {
     expect(found.filter((f) => f.impact === 'serious' || f.impact === 'critical')).toEqual([]);
   });
 }
+
+test('a first letters card with blanks, in every theme', async ({ page }) => {
+  const found = [];
+  await importScript(page);
+  const id = await page.evaluate(() => window.offScript.model.items.find((x) => x.words >= 8).id);
+  for (const theme of ['cream', 'light', 'dark']) {
+    await page.evaluate((t) => window.offScript.saveSettings({ theme: t }), theme);
+    await seedOnce(page, id);
+    await check(page, `card: fewer first letters (${theme})`, found);
+  }
+  expect(found.filter((f) => f.impact === 'serious' || f.impact === 'critical')).toEqual([]);
+});

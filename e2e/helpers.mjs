@@ -73,3 +73,15 @@ export async function answerCard(page, { miss = false } = {}) {
   await page.waitForFunction(([k, label]) => window.offScript.card.key !== k || document.querySelector('h1').textContent !== label, [card.key, card.label]);
   return card.step;
 }
+
+// Marks a line right from its cue alone once, half an hour ago, then opens a practice of just that line.
+export async function seedOnce(page, id) {
+  await page.evaluate((id) => {
+    const o = window.offScript;
+    const day = o.today();
+    const time = Date.now() - 30 * 60000;
+    o.states.set(id, { id, status: 'learning', firstDay: day, learnedDay: null, passes: 1, misses: 0, helped: 1, lapses: 0, stability: 1, passDays: [day], missDays: [], lastResult: 'pass', lastDay: day, lastTime: time, lastMode: 'say' });
+    return o.go('sprint', { custom: { itemIds: [id] } });
+  }, id);
+  await page.waitForFunction(() => window.offScript.card && window.offScript.card.step === 'help');
+}

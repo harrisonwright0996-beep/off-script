@@ -5,7 +5,7 @@
 import { h, clear, screen, button, announce, focusHeading, num, plural, drawn, settled } from './dom.js';
 import { createSession, linesLeft } from '../session.js';
 import { createTypeCheck, sayMisses, makeResult, describeResult, repeatMisses, troubleNote } from '../grade.js';
-import { firstLettersLine } from '../tokens.js';
+import { blankOf, firstLettersOf, lettersShown } from '../tokens.js';
 import { canSpeak, speak, stopSpeaking } from '../tts.js';
 import { untilText } from '../plan.js';
 import { keypad } from './keypad.js';
@@ -26,6 +26,18 @@ export function tokenView(tokens, upTo = tokens.length, misses = new Set()) {
     } else out.push(h('span', { class: t.k === null ? 'tok note' : 'tok' }, t.d));
     out.push(t.a);
   }
+  return out;
+}
+
+// A first letters card's line: the first letters where the card shows them, a blank for each other
+// word (session.js says how many to show).
+export function lettersView(tokens, shown) {
+  const out = [];
+  tokens.forEach((t, i) => {
+    if (t.k === null || shown.has(i)) out.push(firstLettersOf(t));
+    else out.push(h('span', { class: 'blank' }, h('span', { 'aria-hidden': 'true' }, blankOf(t)), h('span', { class: 'visually-hidden' }, ' blank ')));
+    if (i < tokens.length - 1) out.push(t.a);
+  });
   return out;
 }
 
@@ -241,13 +253,20 @@ export async function showSprint(ctx, { scope = 'all', minutes = null, custom = 
     );
   }
 
-  // First letters: the speaker and the first letter of every word, said aloud, then checked as in Say.
+  // The words missed in a line before, from the answers the app keeps (token indices).
+  const missedBefore = (id) => [...new Set(ctx.events.filter((e) => e.id === id && e.missed).flatMap((e) => e.missed))];
+
+  // First letters: the speaker and the first letters, said aloud, then checked as in Say. On a long
+  // line they thin out as it gets stronger, with a blank for each word without its letter.
   function helpCard(c) {
     const item = c.item;
-    const answerArea = h('div', { class: 'answer-area', role: 'group', tabindex: '-1', 'aria-label': 'Your line' }, h('p', { class: 'line' }, firstLettersLine(item.tokens)));
+    const level = c.letters || 'all';
+    const shown = lettersShown(item.tokens, level, level === 'missed' ? missedBefore(item.id) : []);
+    const answerArea = h('div', { class: 'answer-area', role: 'group', tabindex: '-1', 'aria-label': 'Your line' }, h('p', { class: 'line' }, lettersView(item.tokens, shown)));
     const footBox = h('div', { class: 'stack-foot' });
+    const prompt = level === 'all' ? 'Say it aloud from the first letters, then reveal it.' : 'Say it aloud, blanks too, then reveal it.';
     frame(c, [cueBlock(c.cue), h('p', { class: 'speaker' }, speakerName(item)), answerArea], [footBox]);
-    sayCheck(item.tokens, answerArea, footBox, 'Say it aloud from the first letters, then reveal it.', (misses, ms) => finish(c, makeResult({ misses, mode: 'say', ms })));
+    sayCheck(item.tokens, answerArea, footBox, prompt, (misses, ms) => finish(c, makeResult({ misses, mode: 'say', ms })));
   }
 
   // Floor: from the cue alone. Who's next first (when the speaker changes), then the line.

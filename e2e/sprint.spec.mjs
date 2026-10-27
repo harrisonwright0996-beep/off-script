@@ -1,6 +1,8 @@
 import { test, expect } from '@playwright/test';
 import { spawn } from 'node:child_process';
-import { importScript, answerCard, keysOf } from './helpers.mjs';
+import { importScript, answerCard, keysOf, seedOnce } from './helpers.mjs';
+import { fixtureModel } from '../tests/helpers.mjs';
+import { blankOf, firstLettersOf, joinTokens, phraseStarts } from '../src/tokens.js';
 
 const shot = (page, name) => page.screenshot({ path: `shots/${test.info().project.name}-${name}.png` });
 
@@ -27,11 +29,12 @@ test('a sprint by keypad: the beat read line by line, a beat run with the first 
   await expect(page.getByText('It comes back later without the first letters.')).toBeVisible();
   await shot(page, 'card-help-result');
   await page.getByRole('button', { name: 'Next', exact: true }).click();
-  // Then the next beat is taught, and the first is run from the cue alone.
+  // Then the beat is run from the cue alone, before the next beat is taught: one beat in flight.
   const onShow = () => page.evaluate(() => `${document.querySelector('h1').textContent}:${window.offScript.card.step}`);
   for (let i = 0; i < 40 && (await onShow()) !== 'Beat run:floor'; i++) await answerCard(page);
   await expect(page.getByRole('heading', { name: 'Beat run', exact: true })).toBeVisible();
   await expect(page.getByText('Line 1 of 4', { exact: false })).toBeVisible();
+  await expect(page.getByText('The next new beat comes once these lines are right from their cues.')).toBeVisible();
   await expect(page.getByText('Who speaks next?')).toBeVisible();
   await shot(page, 'card-floor-speaker');
   await page.getByRole('group', { name: 'Who speaks next?' }).getByRole('button', { name: 'Cast', exact: true }).click();
@@ -43,7 +46,7 @@ test('a sprint by keypad: the beat read line by line, a beat run with the first 
   await shot(page, 'card-result');
   await page.getByRole('button', { name: 'Next', exact: true }).click();
 
-  // The rest of the run.
+  // The rest of the run; then, with every line of the beat right from its cue, the next beat is taught.
   const steps = [];
   for (let i = 0; i < 40; i++) {
     const label = await page.locator('h1').textContent();
@@ -51,8 +54,11 @@ test('a sprint by keypad: the beat read line by line, a beat run with the first 
     steps.push(`${label}:${await answerCard(page)}`);
   }
   expect(steps.length).toBeGreaterThanOrEqual(3);
-  const progress = await page.evaluate(() => window.offScript.plan().progress.perfectWords);
-  expect(progress).toBeGreaterThan(0);
+  await expect(page.getByRole('heading', { name: 'New', exact: true })).toBeVisible();
+  expect(await page.evaluate(() => window.offScript.model.beats[0].itemIds.every((id) => window.offScript.getState(id).passes === 1))).toBe(true);
+  const perfect = () => page.evaluate(() => window.offScript.plan().progress.perfectWords);
+  for (let i = 0; i < 60 && (await perfect()) === 0; i++) await answerCard(page);
+  expect(await perfect()).toBeGreaterThan(0);
 });
 
 test('a miss shows the right word and comes back through first letters; undo puts it back', async ({ page }) => {
@@ -238,4 +244,27 @@ test('a slip of the finger: a wrong key touching the right one can be counted ri
   await expect(page.getByRole('button', { name: /slip of the finger/ })).toHaveCount(0);
   await expect(page.getByText('Missed here before as well: We.')).toBeVisible();
   await shot(page, 'card-result-trouble');
+});
+
+test('a long line right from its cue once: first letters only at the start of each phrase, a blank for every other word', async ({ page }) => {
+  await importScript(page);
+  const it = fixtureModel().model.items.find((x) => x.words >= 8);
+  const starts = phraseStarts(it.tokens);
+  const want = joinTokens(it.tokens, (t, i) => (t.k === null || starts.has(i) ? firstLettersOf(t) : blankOf(t)));
+  await seedOnce(page, it.id);
+  await expect(page.getByRole('heading', { name: 'Check', exact: true })).toBeVisible();
+  await expect(page.getByText('As a line gets stronger, it shows fewer first letters. Say every word, the blanks too.')).toBeVisible();
+  await expect(page.getByText('Say it aloud, blanks too, then reveal it.')).toBeVisible();
+  const line = page.locator('.answer-area .line');
+  await expect(line.locator('.blank')).toHaveCount(it.tokens.filter((t, i) => t.k !== null && !starts.has(i)).length);
+  const seen = await line.evaluate((p) => {
+    const copy = p.cloneNode(true);
+    copy.querySelectorAll('.visually-hidden').forEach((n) => n.remove());
+    return copy.textContent;
+  });
+  expect(seen).toBe(want);
+  await shot(page, 'card-help-phrases');
+  await page.getByRole('button', { name: 'Reveal' }).click();
+  await page.getByRole('button', { name: 'Done' }).click();
+  await expect(page.locator('.result.perfect')).toHaveText(/Right with the first letters/);
 });

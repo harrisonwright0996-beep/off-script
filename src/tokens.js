@@ -78,9 +78,54 @@ export function firstLettersOf(token) {
 }
 
 export function joinTokens(tokens, view = (t) => t.d) {
-  return tokens.map((t, i) => view(t) + (i < tokens.length - 1 ? t.a : '')).join('');
+  return tokens.map((t, i) => view(t, i) + (i < tokens.length - 1 ? t.a : '')).join('');
 }
 
 export function firstLettersLine(tokens) {
   return joinTokens(tokens, firstLettersOf);
+}
+
+// A word whose first letter is not shown: a blank, keeping the word's punctuation, as the first
+// letters do. A direction is shown as it is.
+export function blankOf(token) {
+  if (token.k === null) return token.d;
+  const i = token.d.search(ALNUM);
+  const tail = token.d.slice(i).match(/[^\p{L}\p{N}'’]+$/u);
+  return token.d.slice(0, i) + '_' + (tail ? tail[0] : '');
+}
+
+// Where a phrase starts: at the first word, after a word ending in a pause (a comma, full stop or
+// other stop, a closing bracket or quote, or a dash), after a dash between two words (not a hyphen)
+// and after a direction. In a long phrase every seventh word starts again, so that no more than six
+// blanks come in a row. Token indices.
+const PAUSE = /[,;:.!?…)\]"”—–-]$/u;
+const DASH = /[–—]/u;
+export const MAX_BLANKS = 6;
+
+export function phraseStarts(tokens) {
+  const starts = new Set();
+  let start = true;
+  let run = 0;
+  tokens.forEach((t, i) => {
+    if (t.k === null) {
+      start = true;
+      return;
+    }
+    if (start || run >= MAX_BLANKS) {
+      starts.add(i);
+      run = 0;
+    } else run += 1;
+    start = PAUSE.test(t.d) || DASH.test(t.a);
+  });
+  return starts;
+}
+
+// The words a first letters go shows a letter for (session.js chooses the level): 'all' every word,
+// 'phrases' the first word of each phrase, 'missed' the first word and the words missed before
+// (token indices). The others are blanks.
+export function lettersShown(tokens, level, missedBefore = []) {
+  const keyed = (i) => i >= 0 && i < tokens.length && tokens[i].k !== null;
+  if (level === 'phrases') return phraseStarts(tokens);
+  if (level === 'missed') return new Set([tokens.findIndex((t) => t.k !== null), ...missedBefore].filter(keyed));
+  return new Set(tokens.map((t, i) => i).filter(keyed));
 }

@@ -11,9 +11,13 @@
 // shows the right line and moves on: the line comes back after at least three other answers, with the
 // first letters, then once more without them.
 // New lines come in rounds: teach a beat's lines (each tried from its cue first, or read), then run the
-// beats resting from the round before and the new beat. Between rounds come the lines still owed a
-// go, then tests of what is already learned, up to six at a time and the most at risk first, so older
-// lines are checked in between new ones. When nothing new is left, it is tests.
+// beats resting from the round before and the new beat. One beat is in flight at a time: a new beat
+// is taught only once every line of the others has been right from its cue alone, so a round can be
+// just the runs of the beats resting. Between rounds come the lines still owed a go, then tests of
+// what is already learned, up to six at a time and the most at risk first, so older lines are
+// checked in between new ones. When nothing new is left, it is tests.
+// On a line of 8 words or more the first letters thin out as it gets stronger: every one, then the
+// start of each phrase, then the first word and the words missed before (lettersOf).
 // At time up nothing new comes: the sprint carries on until every line it has shown is right without help.
 // The session never saves anything itself: answer() returns the event and new state for the app to
 // save, and advance() then picks the next card using the app's up to date states and plan.
@@ -28,6 +32,8 @@ export const AHEAD_MESSAGE = "Today's plan is done. This is a head start on tomo
 export const EXTRA_RUN_MESSAGE = "Today's plan is done. This is an extra run.";
 export const AGAIN_MESSAGE = 'Lines come back later in the sprint until they are right without help.';
 export const CLOSING_MESSAGE = "Time's up. Just the lines still to finish, then you're done.";
+export const LETTERS_MESSAGE = 'As a line gets stronger, it shows fewer first letters. Say every word, the blanks too.';
+export const HOLD_MESSAGE = 'The next new beat comes once these lines are right from their cues.';
 
 export const GAP = 3; // other answers before a line comes back
 // First letters first when the chance of recall now is below this. A line falls due at 90%, so a check
@@ -39,6 +45,21 @@ const VERSION = 2; // of the saved sprint: one saved by the first version is not
 
 // Left to Off Script, whether a line already started has its first go with the first letters.
 export const helpFirst = (s, now, k = 1) => s.passes < EARLY || s.lastResult !== 'pass' || recallNow(s, now, k) < HELP_BELOW;
+
+// How many first letters a first letters go shows, when Off Script chooses the help: on a line of
+// LONG words or more, every one while it has never been right from the cue alone, or after a miss
+// (last time, or earlier in this sprint); then only at the start of each phrase once it is right
+// once; then only the first word's and those of the words missed before once it is right twice. A
+// line right more often has them only when it is slipping at a check: at the start of each phrase.
+// The least help that still works: on a long line the jump from every first letter to none is too
+// big, and help taken away step by step gave the best recall (Finley and others 2011).
+export const LONG = 8;
+export function lettersOf(s, words, missedHere = false) {
+  if (words < LONG || missedHere || s.passes === 0 || s.lastResult !== 'pass') return 'all';
+  if (s.passes === 1) return 'phrases';
+  if (s.passes === 2) return 'missed';
+  return 'phrases';
+}
 
 const FRONT_PROMPTS = [
   'Say it aloud, meaning it.',
@@ -139,12 +160,29 @@ export function createSession({ model, index, getPlan, getState, settings, scope
 
   const runTask = (beatId) => ({ kind: 'seq', queue: 'beat', beatId, ids: [...beatById.get(beatId).itemIds], pos: 0 });
 
+  // A line in flight: started, but never yet right from the cue alone.
+  const inFlight = (id) => {
+    const s = getState(id);
+    return s.status !== 'new' && s.passes === 0;
+  };
+  // One beat in flight: while a line of another beat is in flight, no new beat is taught. Testing what
+  // was just learned before taking in more helps the next part go in, and keeps the two apart.
+  const othersInFlight = (beatId) => model.items.some((it) => it.beat !== beatId && inFlight(it.id));
+
   // A round: teach one beat, then run the beats resting from the round before, then the new one. A beat
-  // started before this sprint and not yet run in it comes first, in a round of its own.
+  // started before this sprint and not yet run in it comes first, in a round of its own. While a line
+  // of another beat is in flight, the round is only the runs of the beats resting.
   function startRound(beats) {
     const rest = S.rest.filter(live);
     const started = beats.find((id) => live(id) && !rest.includes(id) && !toTeach(id));
-    const teach = started ? null : beats.find((id) => live(id) && toTeach(id)) || null;
+    let teach = started ? null : beats.find((id) => live(id) && toTeach(id)) || null;
+    if (teach && othersInFlight(teach)) {
+      teach = null;
+      if (rest.length && !S.holdSaid) {
+        S.message = HOLD_MESSAGE;
+        S.holdSaid = true;
+      }
+    }
     const runs = [...rest];
     const own = started || teach;
     if (own && !runs.includes(own)) runs.push(own);
@@ -283,6 +321,13 @@ export function createSession({ model, index, getPlan, getState, settings, scope
     if (t.kind === 'seq' && t.queue === 'run') c.label = `Run: ${model.scenes[item.scene].heading}`;
     if (t.kind === 'seq') c.progress = { pos: t.pos + 1, total: t.ids.length };
     if (step === 'front') c.prompt = FRONT_PROMPTS[S.frontTurn++ % FRONT_PROMPTS.length];
+    if (step === 'help') {
+      c.letters = helpMode() === 'auto' ? lettersOf(getState(item.id), item.words, lineOf(item.id).missed) : 'all';
+      if (c.letters !== 'all' && !S.lettersSaid) {
+        S.message ||= LETTERS_MESSAGE;
+        S.lettersSaid = true;
+      }
+    }
     if (step === 'floor') {
       const choices = settings.askSpeaker && item.askSpeaker ? speakerChoices(model, item, 6, byId) : [];
       c.askSpeaker = choices.length > 1;
