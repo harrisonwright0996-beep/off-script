@@ -20,6 +20,7 @@ import { HOUR, OPENING_TARGET, TARGET, fitFactor, readyAt, recallNow, retrievabi
 export const RUN_MIN = 4; // ready lines needed for a run in flow
 export const RUN_DENSITY = 0.6; // share of a stretch that must be ready
 export const RUN_GAP = 2; // lines not ready that a stretch can step over
+export const UPKEEP_NOTE = 'Checks now take the lines just falling due first, so the fewest slip; any that have slipped further come round as time allows.';
 export const REVIEW_BURST = 6; // tests in a row before the next new beat
 
 export const FINAL_DAYS = 3; // the days before show week that are final days again
@@ -119,6 +120,10 @@ function fromWeakest(index, learned, weak, recall) {
 // (the lowest chance of recall in it), so a short day still covers the scenes most at risk.
 // shuffle (sprints): no stretches in flow, every line on its own, and lines about as much at risk
 // (within 5 points) in the day's order, so lines learned together do not come in order.
+// After off script day (maintenance) more is often ready than there is time for, so the least overdue
+// come first: the fewest slip, and lines that have slipped further come round as time allows, or in
+// the final days (simulation rounds 20 to 23: about 20 fewer slips on 14 December). A line ready only
+// because two weeks have passed comes after the rest; a miss not yet relearned still comes first.
 export function testsOf({ model, index, getState, ready, phase, today, shuffle = false }) {
   const whole = phase === 'final' || phase === 'deadline';
   const tests = [];
@@ -153,8 +158,12 @@ export function testsOf({ model, index, getState, ready, phase, today, shuffle =
   for (const [id, r] of ready) if (!inRuns.has(id)) tests.push({ kind: 'line', id, r });
   const rank = new Map(dayOrder([...ready.keys()], today).map((id, i) => [id, i]));
   const first = (t) => rank.get(t.kind === 'run' ? t.itemIds[0] : t.id) ?? 0;
-  const group = (t) => (t.r === 0 ? 0 : whole && t.kind === 'run' ? 1 : 2);
-  const risk = (t) => (shuffle ? Math.floor(t.r * 20) : t.r);
+  const backlog = phase === 'maintenance';
+  const openings = backlog ? new Set(spineItemIds(model)) : null;
+  const held = (t) => backlog && t.kind === 'line' && t.r > targetOf(openings, t.id);
+  const group = (t) => (t.r === 0 ? 0 : whole && t.kind === 'run' ? 1 : held(t) ? 3 : 2);
+  const level = (t) => (shuffle ? Math.floor(t.r * 20) : t.r);
+  const risk = (t) => (backlog ? -level(t) : level(t));
   return tests.sort((a, b) => group(a) - group(b) || risk(a) - risk(b) || (group(a) === 1 ? a.scene - b.scene : first(a) - first(b)));
 }
 
@@ -372,6 +381,7 @@ export function buildPlan({ model, index, getState, events, settings, today, now
   if (today === addDays(settings.deadline, -1) || (showAhead && today === addDays(settings.showDay, -1))) notes.push('Today, do at least one whole run in Type or Say mode. It is the precise check.');
   if (phase === 'deadline') notes.push('Off script day. One run of the whole play today, and Walk is ideal.');
   if (phase === 'show') notes.push('Show week. Short checks keep every line at its peak; anything missed comes first next time.');
+  if (phase === 'maintenance') notes.push(UPKEEP_NOTE);
   const lastActive = model.items.reduce((d, it) => {
     const l = getState(it.id).lastDay;
     return l && l > d ? l : d;

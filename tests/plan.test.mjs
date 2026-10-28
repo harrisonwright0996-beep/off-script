@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { fakeApp, learn } from './helpers.mjs';
-import { phaseOf, recallGate, dayOrder, beatStage, untilText, paceOf, activeTime, buildPlan, typingPace, typedPerWord, FRONT_LOAD } from '../src/plan.js';
+import { phaseOf, recallGate, dayOrder, beatStage, untilText, paceOf, activeTime, buildPlan, typingPace, typedPerWord, FRONT_LOAD, UPKEEP_NOTE } from '../src/plan.js';
 import { DEFAULT_SETTINGS } from '../src/settings.js';
 import { newState } from '../src/state.js';
 import { HOUR } from '../src/memory.js';
@@ -157,6 +157,22 @@ test('tests come most at risk first', () => {
   learn(app, [ids[8]], { stability: 1, hoursAgo: 6 });
   learn(app, [ids[11]], { stability: 1, hoursAgo: 4 });
   assert.deepEqual(app.plan().due, [ids[8], ids[11], ids[4]]);
+});
+
+test('after off script day, the least overdue come first, a miss before them, and a line ready only after two weeks last', () => {
+  const app = fakeApp();
+  app.setDay('2026-11-20');
+  const ids = sceneIds(app, 1);
+  learn(app, ids, { stability: 2000, hoursAgo: 1 });
+  learn(app, [ids[4]], { stability: 1, hoursAgo: 2 });
+  learn(app, [ids[8]], { stability: 1, hoursAgo: 6 });
+  learn(app, [ids[11]], { stability: 1, hoursAgo: 4 });
+  learn(app, [ids[1]], { stability: 1, hoursAgo: 1, lastResult: 'miss' });
+  learn(app, [ids[6]], { stability: 2000, hoursAgo: 24 * 14 });
+  const plan = app.plan();
+  assert.equal(plan.phase, 'maintenance');
+  assert.deepEqual(plan.due, [ids[1], ids[4], ids[11], ids[8], ids[6]]);
+  assert.ok(plan.notes.includes(UPKEEP_NOTE));
 });
 
 test('lines of equal risk keep the same shuffled order all day', () => {
