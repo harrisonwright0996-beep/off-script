@@ -100,18 +100,24 @@ export function showToday(ctx) {
       button('Settings', () => ctx.go('settings')),
     );
     const choose = button('Choose what to practise', () => ctx.go('choose'));
+    // In script order: everything learned so far, every line, the whole play or a scene.
+    const runThrough = button('Run through', () => ctx.go('choose', { run: true }));
     let footer;
     if (plan.done) {
       footer = [
         plan.ahead.length ? button('Head start on tomorrow', () => ctx.go('sprint', { extra: 'new' }), { class: 'btn primary' }) : null,
-        plan.extraRuns.length ? button('An extra run', () => ctx.go('sprint', { extra: 'runs' }), { class: plan.ahead.length ? 'btn' : 'btn primary' }) : null,
+        h(
+          'div',
+          { class: 'row' },
+          [plan.extraRuns.length ? button('An extra run', () => ctx.go('sprint', { extra: 'runs' }), { class: plan.ahead.length ? 'btn' : 'btn primary' }) : null, runThrough].filter(Boolean),
+        ),
         choose,
         others,
       ].filter(Boolean);
     } else {
       footer = [
         button('Start sprint', () => ctx.go('sprint'), { class: 'btn primary' }),
-        button('Just 2 minutes', () => ctx.go('sprint', { scope: plan.tests.length ? 'tests' : 'all', minutes: 2 })),
+        h('div', { class: 'row' }, button('Just 2 minutes', () => ctx.go('sprint', { scope: plan.tests.length ? 'tests' : 'all', minutes: 2 })), runThrough),
         choose,
         others,
       ];

@@ -59,8 +59,8 @@ const comesBack = (rec) => (rec.later ? COMES_BACK[rec.need] : null);
 
 // scope: 'all' or 'tests' (Just 2 minutes). minutes: the sprint length (settings by default).
 // custom: { scene, itemIds } for Run this scene. extra: 'new' or 'runs' to keep going after the plan.
-// practice: a chosen practice ({ scene, which, help, itemIds, title }), or 'resume' to carry on the
-// one saved.
+// practice: a chosen practice ({ scene, which, help, itemIds, title, run }; run: a Run through), or
+// 'resume' to carry on the one saved.
 export async function showSprint(ctx, { scope = 'all', minutes = null, custom = null, extra = null, practice = null } = {}) {
   const today = ctx.today();
   const length = (minutes ?? ctx.settings.sprintMinutes) * 60000;
@@ -484,7 +484,7 @@ export async function showSprint(ctx, { scope = 'all', minutes = null, custom = 
       }
     }, 10000);
     const left = chosen ? linesLeft(session.state) : 0;
-    plain('Sprint done', [h('p', { class: 'lead' }, statsLine(st)), left ? h('p', {}, `${plural(left, 'line')} of this practice still to go.`) : null, h('h2', {}, 'Break'), bar, status], [
+    plain('Sprint done', [h('p', { class: 'lead' }, statsLine(st)), left ? h('p', {}, `${plural(left, 'line')} of this ${chosen.run ? 'run through' : 'practice'} still to go.`) : null, h('h2', {}, 'Break'), bar, status], [
       left
         ? button('Carry on', act(() => ctx.go('sprint', { practice: 'resume' })), { class: 'btn primary' })
         : button('Another sprint', act(() => ctx.go('sprint')), { class: 'btn primary' }),
@@ -498,8 +498,10 @@ export async function showSprint(ctx, { scope = 'all', minutes = null, custom = 
     const nextCheck = plan.nextAt ? h('p', {}, `The next check is ready ${untilText(plan.nextAt, Date.now(), plan.day)}.`) : null;
     const said = st.answered ? h('p', {}, statsLine(st)) : null;
     if (chosen) {
-      return plain('Practice done', [h('p', { class: 'lead' }, `${chosen.title}.`), said], [
-        button('Choose again', act(() => ctx.go('choose')), { class: 'btn primary' }),
+      return plain(chosen.run ? 'Run through done' : 'Practice done', [h('p', { class: 'lead' }, `${chosen.title}.`), said], [
+        chosen.run
+          ? button('Run through again', act(() => ctx.go('choose', { run: true })), { class: 'btn primary' })
+          : button('Choose again', act(() => ctx.go('choose')), { class: 'btn primary' }),
         button('Today', act(() => ctx.go('today'))),
       ]);
     }

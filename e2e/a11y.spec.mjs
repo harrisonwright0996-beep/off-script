@@ -58,7 +58,7 @@ for (const theme of ['cream', 'light', 'dark']) {
     await check(page, 'card: say', found);
     await page.getByRole('button', { name: 'Done' }).click();
     await page.getByRole('button', { name: 'Next', exact: true }).click();
-    // The rest of the beat is read, then the beat is run with the first letters.
+    // The rest of the beat is read, then each line comes back with the first letters.
     const letters = page.getByText('Say it aloud from the first letters, then reveal it.');
     for (let i = 0; i < 12 && !(await letters.count()); i++) await answerCard(page);
     await check(page, 'card: first letters', found);
@@ -74,6 +74,10 @@ for (const theme of ['cream', 'light', 'dark']) {
     await check(page, 'choose', found);
     await page.getByLabel('Which lines').selectOption({ label: 'Every line' });
     await check(page, 'choose: every line', found);
+    await page.getByRole('button', { name: 'Today', exact: true }).click();
+    await page.getByRole('button', { name: 'Run through' }).click();
+    await expect(page.getByRole('heading', { name: 'Run through' })).toBeVisible();
+    await check(page, 'run through', found);
     await page.getByRole('button', { name: 'Today', exact: true }).click();
 
     await page.getByRole('button', { name: 'Scenes' }).click();

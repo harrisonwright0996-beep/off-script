@@ -78,3 +78,71 @@ test('a chosen practice to the end: Practice done, then Choose again with nothin
   await expect(page.getByRole('heading', { name: 'Choose what to practise' })).toBeVisible();
   await expect(page.getByText('Part way through', { exact: false })).toHaveCount(0);
 });
+
+// Learned earlier today: the Prologue and the first three lines of Scene 1. Their ids, in script order.
+async function learnedToday(page) {
+  const ids = await page.evaluate(() => {
+    const o = window.offScript;
+    const day = o.today();
+    const time = Date.now() - 2 * 3600000;
+    const ids = [...o.model.scenes[0].itemIds, ...o.model.scenes[1].itemIds.slice(0, 3)];
+    for (const id of ids) {
+      o.states.set(id, { id, status: 'review', firstDay: day, learnedDay: day, passes: 2, misses: 0, helped: 1, lapses: 0, stability: 24, passDays: [day], missDays: [], lastResult: 'pass', lastDay: day, lastTime: time, lastMode: 'type' });
+    }
+    o.go('today');
+    return ids;
+  });
+  await expect(page.getByRole('button', { name: 'Just 2 minutes' })).toBeVisible();
+  return ids;
+}
+
+test('Run through: everything learned so far in script order; a miss carries on and comes back after that run; its choices are its own', async ({ page }) => {
+  await importScript(page);
+  const learned = await learnedToday(page);
+  await page.getByRole('button', { name: 'Run through' }).click();
+  await expect(page.getByRole('heading', { name: 'Run through' })).toBeVisible();
+  await expect(page.getByText('In script order, scene by scene. A miss shows the line and carries on; it comes back after that run.')).toBeVisible();
+  await expect(page.getByLabel('Where')).toHaveValue('null'); // the whole play
+  await expect(page.getByLabel('Which lines').locator('option')).toHaveText(['Everything learned so far', 'Every line']);
+  await expect(page.getByLabel('How much help')).toHaveValue('cue'); // from the cue first, help after a miss
+  await page.getByLabel('How much help').selectOption({ label: 'No help' });
+  await expect(page.getByText(/^7 lines, \d+ words: under 5 minutes at a typical pace\.$/)).toBeVisible();
+  await shot(page, 'run-through');
+  await page.getByRole('button', { name: 'Start' }).click();
+  await expect(page.getByRole('heading', { name: 'Run: Prologue' })).toBeVisible();
+  await expect(page.getByText('Line 1 of 4', { exact: false })).toBeVisible();
+  const shown = [];
+  for (let i = 0; i < 8; i++) {
+    shown.push(await cardId(page));
+    expect(await answerCard(page, { miss: i === 1 })).toBe('floor');
+  }
+  expect(shown).toEqual([...learned, learned[1]]); // in order, then the miss once the Scene 1 run is done
+  await expect(page.getByRole('heading', { name: 'Run through done' })).toBeVisible();
+  await expect(page.getByText('The whole play, everything learned so far.')).toBeVisible();
+  await expect(page.getByText('8 answers, 7 word perfect.')).toBeVisible();
+  await page.getByRole('button', { name: 'Run through again' }).click();
+  await expect(page.getByRole('heading', { name: 'Run through' })).toBeVisible();
+  await expect(page.getByLabel('How much help')).toHaveValue('none'); // remembered for Run through
+  await expect(page.getByText('Part way through', { exact: false })).toHaveCount(0);
+  await page.getByRole('button', { name: 'Today', exact: true }).click();
+  await page.getByRole('button', { name: 'Choose what to practise' }).click();
+  await expect(page.getByLabel('How much help')).toHaveValue('auto'); // Choose what to practise keeps its own
+  await expect(page.getByLabel('Which lines').locator('option')).toHaveCount(3);
+});
+
+test('Run through from the cue first: lines learned today are asked from the cue alone; a miss comes back with the first letters, then without', async ({ page }) => {
+  await importScript(page);
+  const learned = await learnedToday(page);
+  await page.getByRole('button', { name: 'Run through' }).click();
+  await page.getByRole('button', { name: 'Start' }).click();
+  await expect(page.getByRole('heading', { name: 'Run: Prologue' })).toBeVisible();
+  const goes = [];
+  for (let i = 0; i < 10; i++) {
+    const id = await cardId(page);
+    goes.push(`${await answerCard(page, { miss: i === 1 })}:${learned.indexOf(id)}`);
+  }
+  // The miss is not asked straight after its first letters: the first line comes in between.
+  expect(goes).toEqual([...learned.map((_, i) => `floor:${i}`), 'help:1', 'floor:0', 'floor:1']);
+  await expect(page.getByRole('heading', { name: 'Run through done' })).toBeVisible();
+  await expect(page.getByText('9 answers, 8 word perfect.')).toBeVisible();
+});

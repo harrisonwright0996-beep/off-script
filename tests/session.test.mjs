@@ -424,6 +424,16 @@ test('chosen practice: lines from several scenes, as runs where they follow on, 
   assert.deepEqual(read, [`due:front:${sc3[4]}`, `due:help:${sc3[4]}`, `again:floor:${sc3[4]}`], 'read it, first letters, then without');
 });
 
+test('chosen practice from the cue first: every line from its cue alone, one learned today too; a miss comes back with the first letters, then without', () => {
+  const app = fakeApp();
+  const ids = app.model.scenes[0].itemIds;
+  learn(app, ids, { passes: 2, stability: 24, hoursAgo: 2 });
+  assert.equal(start(app, { custom: { itemIds: ids } }).advance().step, 'help', 'left to Off Script: the first letters first');
+  const log = play(app, start(app, { custom: { itemIds: ids, help: 'cue' } }), { decide: missFirst([ids[1]]) });
+  // Not straight after its first letters: a line already right comes in between.
+  assert.deepEqual(log, [...ids.map((id) => `run:floor:${id}`), `again:help:${ids[1]}`, `again:floor:${ids[0]}`, `again:floor:${ids[1]}`]);
+});
+
 test('a chosen practice saved part way says how many lines it still has to go', () => {
   const app = fakeApp();
   const ids = app.model.scenes[3].itemIds;

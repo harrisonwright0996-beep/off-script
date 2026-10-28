@@ -17,6 +17,7 @@ export const DEFAULT_SETTINGS = {
   rate: 1,
   focusScene: null, // "Learn this scene next"
   practice: null, // the last choices on Choose what to practise: { scene, which, help }
+  runThrough: null, // the last choices on Run through: { scene, which, help }
 };
 
 export function withDefaults(saved) {

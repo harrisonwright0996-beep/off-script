@@ -96,8 +96,9 @@ const sprintState = () => ({ pool: [], teach: null, streak: 0, lastId: null, lin
 
 // scope: 'all' (new lines and tests) or 'tests' (Just 2 minutes: tests only).
 // custom: { scene, itemIds, help } for "Run this scene" and chosen practice: the lines in order, run
-// where they follow on in a scene. help: 'auto' (as above), 'none' (always from the cue alone, misses
-// too), 'letters' (the first letters first for every line), 'read' (read it, the first letters, then without).
+// where they follow on in a scene. help: 'auto' (as above), 'cue' (from the cue alone first, the first
+// letters only after a miss), 'none' (always from the cue alone, misses too), 'letters' (the first
+// letters first for every line), 'read' (read it, the first letters, then without).
 export function createSession({ model, index, getPlan, getState, settings, scope = 'all', custom = null, saved = null, now = () => Date.now() }) {
   const { byId, beatById } = index;
   let S =
@@ -131,7 +132,7 @@ export function createSession({ model, index, getPlan, getState, settings, scope
   function firstNeed(id) {
     const s = getState(id);
     const mode = helpMode();
-    if (mode === 'none') return 'clean';
+    if (mode === 'none' || mode === 'cue') return 'clean';
     if (mode === 'read') return 'read';
     if (mode === 'letters') return 'help';
     if (s.status === 'new') return 'clean'; // never practised: try it from the cue first

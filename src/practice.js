@@ -20,7 +20,7 @@ export const practiceTitle = ({ model, scene = null, which }) => `${scene === nu
 
 // Goes a started line gets: from the cue alone, or the first letters first and later without (a
 // little more when it is read first). Left to Off Script, as the sprint decides (session.js).
-const GOES = { none: () => 1, auto: (s, now, k) => (helpFirst(s, now, k) ? 2 : 1), letters: () => 2, read: () => 2.5 };
+const GOES = { none: () => 1, cue: () => 1, auto: (s, now, k) => (helpFirst(s, now, k) ? 2 : 1), letters: () => 2, read: () => 2.5 };
 
 // Minutes at his pace (paceOf in plan.js): a line not started yet at the pace of learning, others at
 // the pace of runs. now and k: the moment and his personal factor, for the chance of recall.
