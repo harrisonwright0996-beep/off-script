@@ -4,8 +4,9 @@
 // scene opening), or that was missed and not yet relearned, or that has gone too long untested for
 // the date (3 days while learning and in show week, 14 days in between; every line every day in the
 // final days before off script day and before show week, and on off script day).
-// Tests: a stretch of ready lines in flow (whole scenes from the top in the final days, the weakest
-// scene first), otherwise the line on its own from its cue. Most at risk first.
+// Tests: on walks, a stretch of ready lines in flow, otherwise the line on its own from its cue; in
+// sprints, every line on its own and out of order; in the final days, whole scenes from the top, the
+// weakest scene first. Most at risk first.
 // New: whole beats in running order, up to today's share of what is left (a little more than an even
 // spread, so more comes while reviews are light). The sprint puts the tests in between the new beats.
 // It adapts both ways: the share is what is left over the days left, so a big day makes later days
@@ -116,7 +117,9 @@ function fromWeakest(index, learned, weak, recall) {
 // is run in flow from its first ready line; other ready lines are tested on their own. In the final
 // days every scene is run whole from the top: those with a miss first, then the weakest scene first
 // (the lowest chance of recall in it), so a short day still covers the scenes most at risk.
-export function testsOf({ model, index, getState, ready, phase, today }) {
+// shuffle (sprints): no stretches in flow, every line on its own, and lines about as much at risk
+// (within 5 points) in the day's order, so lines learned together do not come in order.
+export function testsOf({ model, index, getState, ready, phase, today, shuffle = false }) {
   const whole = phase === 'final' || phase === 'deadline';
   const tests = [];
   const inRuns = new Set();
@@ -130,6 +133,7 @@ export function testsOf({ model, index, getState, ready, phase, today }) {
       due.forEach((id) => inRuns.add(id));
       continue;
     }
+    if (shuffle) continue;
     const stretches = [];
     let cur = null;
     learned.forEach((id, i) => {
@@ -150,7 +154,8 @@ export function testsOf({ model, index, getState, ready, phase, today }) {
   const rank = new Map(dayOrder([...ready.keys()], today).map((id, i) => [id, i]));
   const first = (t) => rank.get(t.kind === 'run' ? t.itemIds[0] : t.id) ?? 0;
   const group = (t) => (t.r === 0 ? 0 : whole && t.kind === 'run' ? 1 : 2);
-  return tests.sort((a, b) => group(a) - group(b) || a.r - b.r || (group(a) === 1 ? a.scene - b.scene : first(a) - first(b)));
+  const risk = (t) => (shuffle ? Math.floor(t.r * 20) : t.r);
+  return tests.sort((a, b) => group(a) - group(b) || risk(a) - risk(b) || (group(a) === 1 ? a.scene - b.scene : first(a) - first(b)));
 }
 
 // Keep going: every scene with learned lines, the least secure first, from its weakest beat.

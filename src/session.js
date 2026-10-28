@@ -6,16 +6,18 @@
 // cue alone fewer than three times), when it was missed last time, or when his forgetting curve says he
 // may not manage without (a chance of recall now below 80%). A new line has the first letters before it
 // is first asked without them: taught, it is read with the rest of its beat and said from the first
-// letters in the beat's run, so there is a gap between reading it and saying it (a go straight after
+// letters a few cards later, so there is a gap between reading it and saying it (a go straight after
 // reading is hardly a recall); right at its first try, its next go is with the first letters. A miss
 // shows the right line and moves on: the line comes back after at least three other answers, with the
-// first letters, then once more without them.
-// New lines come in rounds: teach a beat's lines (each tried from its cue first, or read), then run the
-// beats resting from the round before and the new beat. One beat is in flight at a time: a new beat
-// is taught only once every line of the beats resting has been right from its cue alone, so a round
-// can be just their runs. Between rounds come the lines still owed a go, then tests of
-// what is already learned, up to six at a time and the most at risk first, so older lines are
-// checked in between new ones. When nothing new is left, it is tests.
+// first letters, then without them.
+// New lines come two beats at a time. A beat's lines are read in order, one by one (each tried from its
+// cue first, or read); then each line comes back on its own and out of order, with at least three
+// other answers in between, until it is learned: right from its cue alone twice. Out of order, each
+// line is found from its cue, not from the line before. The next beat is read once one of the two is
+// learned and every line read has had a go. After every three goes on lines coming back there is a
+// check of an older line, the most at risk first, so what is learned is kept up in between; when
+// nothing new is left, it is checks, each line on its own and out of order too (in the final days,
+// whole scenes from the top).
 // On a line of 8 words or more the first letters thin out as it gets stronger: every one, then the
 // start of each phrase, then the first word and the words missed before (lettersOf).
 // At time up nothing new comes: the sprint carries on until every line it has shown is right without help.
@@ -23,8 +25,8 @@
 // save, and advance() then picks the next card using the app's up to date states and plan.
 import { applyHelp, applyResult, needsTeaching } from './state.js';
 import { SLOW, recallNow } from './memory.js';
-import { cueOf, speakerChoices } from './items.js';
-import { beatStage, testsOf, typedPerWord, REVIEW_BURST, RUN_MIN } from './plan.js';
+import { cueOf, fnv1a, speakerChoices } from './items.js';
+import { beatStage, testsOf, typedPerWord } from './plan.js';
 import { dayKey } from './dates.js';
 
 export const TEACH_FIRST_MESSAGE = "This stretch is new to you, so I'll teach it first.";
@@ -33,9 +35,12 @@ export const EXTRA_RUN_MESSAGE = "Today's plan is done. This is an extra run.";
 export const AGAIN_MESSAGE = 'Lines come back later in the sprint until they are right without help.';
 export const CLOSING_MESSAGE = "Time's up. Just the lines still to finish, then you're done.";
 export const LETTERS_MESSAGE = 'As a line gets stronger, it shows fewer first letters. Say every word, the blanks too.';
-export const HOLD_MESSAGE = 'The next new beat comes once these lines are right from their cues.';
+export const SHUFFLE_MESSAGE = 'Each new line comes back on its own and out of order, until it is right from its cue twice.';
 
 export const GAP = 3; // other answers before a line comes back
+export const POOL = 2; // beats being learned at a time
+export const CHECK_EVERY = 3; // goes on lines coming back, then a check of an older line
+const SHUFFLE = 3; // how far the order of lines coming back is shaken up, in answers
 // First letters first when the chance of recall now is below this. A line falls due at 90%, so a check
 // on time is from the cue alone: the go that builds memory, and the one the curve learns from.
 export const HELP_BELOW = 0.8;
@@ -68,7 +73,7 @@ const FRONT_PROMPTS = [
   'What does this person want here?',
 ];
 
-const LABELS = { due: 'Check', new: 'New', beat: 'Beat run', run: 'Run' };
+const LABELS = { due: 'Check', new: 'New', beat: 'Learning', run: 'Run' };
 // The card for each go a line can need: read it (then the first letters), the first letters, or the cue alone.
 const STEP = { read: 'front', help: 'help', clean: 'floor', done: 'floor' };
 
@@ -84,9 +89,10 @@ export function linesLeft(saved) {
   return left.size;
 }
 
-// What one sprint keeps: the round under way, the beats resting from the last one, every line it has
-// shown, how many goes so far (gaps are counted in these), and whether time is up.
-const sprintState = () => ({ round: null, rest: [], lines: {}, goes: 0, tests: 0, closing: false, task: null, planDone: false });
+// What one sprint keeps: the beats being learned, the one being read, goes on lines coming back since
+// the last check, the line answered last, every line it has shown, how many goes so far (gaps are
+// counted in these), and whether time is up.
+const sprintState = () => ({ pool: [], teach: null, streak: 0, lastId: null, lines: {}, goes: 0, closing: false, task: null, planDone: false });
 
 // scope: 'all' (new lines and tests) or 'tests' (Just 2 minutes: tests only).
 // custom: { scene, itemIds, help } for "Run this scene" and chosen practice: the lines in order, run
@@ -111,6 +117,8 @@ export function createSession({ model, index, getPlan, getState, settings, scope
           stats: { answered: 0, perfect: 0, learnedItems: 0, learnedWords: 0 },
           ...sprintState(),
         };
+  S.pool ||= []; // a sprint saved by Release 12 or before
+  S.streak ||= 0;
   let card = null;
   let lastPlan = null;
 
@@ -139,8 +147,10 @@ export function createSession({ model, index, getPlan, getState, settings, scope
   }
 
   // What this sprint knows about a line it has shown: the go it needs next, when it last had one (in
-  // goes), whether it was missed, or right with the first letters, earlier in the sprint, and whether it
-  // was taught (read with its beat) in it.
+  // cards), whether it was missed, right with the first letters, or right from the cue alone earlier
+  // in the sprint, whether it was taught (read with its beat) in it, whether it is still waiting for
+  // its first go since being read (justRead), and when the teaching it was tried or read in began
+  // (from), until its next go.
   function lineOf(id) {
     return (S.lines[id] ||= { need: firstNeed(id), last: -GAP, missed: false, helped: false });
   }
@@ -158,88 +168,61 @@ export function createSession({ model, index, getPlan, getState, settings, scope
     return { kind: 'item', queue: 'new', id, beatId, step, pretest: false };
   }
 
-  const runTask = (beatId) => ({ kind: 'seq', queue: 'beat', beatId, ids: [...beatById.get(beatId).itemIds], pos: 0 });
+  // A line of one of the beats being learned.
+  const pooled = (id) => S.pool.includes(byId.get(id).beat);
 
-  // A beat in flight: a line of it started, but never yet right from the cue alone. While a beat
-  // resting from the round before is in flight, no new beat is taught: testing what was just learned
-  // before taking in more helps the next part go in, and keeps the two apart. A beat started before
-  // this sprint has a round of its own first, so it rests by then; one part learned (as a chosen
-  // practice can leave it) is finished when its turn comes.
-  const inFlight = (beatId) =>
-    beatById.get(beatId).itemIds.some((id) => {
+  // A beat joins the two being learned: its lines still to be taught are read first, one by one; the
+  // rest, started before and not yet learned, are owed a go straight away.
+  function join(beatId) {
+    S.pool.push(beatId);
+    for (const id of beatById.get(beatId).itemIds) {
       const s = getState(id);
-      return s.status !== 'new' && s.passes === 0;
-    });
-
-  // A round: teach one beat, then run the beats resting from the round before, then the new one. A beat
-  // started before this sprint and not yet run in it comes first, in a round of its own. While a line
-  // of a beat resting is in flight, the round is only the runs of the beats resting.
-  function startRound(beats) {
-    const rest = S.rest.filter(live);
-    const started = beats.find((id) => live(id) && !rest.includes(id) && !toTeach(id));
-    let teach = started ? null : beats.find((id) => live(id) && toTeach(id)) || null;
-    if (teach && rest.some(inFlight)) {
-      teach = null;
-      if (!S.holdSaid) {
-        S.message = HOLD_MESSAGE;
-        S.holdSaid = true;
-      }
+      if (s.status === 'review' || (!S.lines[id] && needsTeaching(s))) continue;
+      if (S.lines[id] && !owing(id)) delete S.lines[id];
+      lineOf(id);
     }
-    const runs = [...rest];
-    const own = started || teach;
-    if (own && !runs.includes(own)) runs.push(own);
-    S.round = { teach, runs, ran: [] };
-    S.rest = [];
-    const t = roundTask();
-    if (!t) S.round = null;
-    return t;
+    if (toTeach(beatId)) {
+      S.teach = beatId;
+      S.readFrom = S.goes;
+    }
   }
 
-  function roundTask() {
-    const r = S.round;
-    if (r.teach && live(r.teach) && toTeach(r.teach)) return teachTask(r.teach);
-    const id = r.runs.find((b) => !r.ran.includes(b) && live(b));
-    if (!id) return null;
-    r.ran.push(id);
-    return runTask(id);
-  }
+  // Room for the next beat: fewer than two being learned, and every line read has had a go since.
+  const room = () => S.pool.length < POOL && !Object.values(S.lines).some((l) => l.justRead);
 
-  // The round is over: its beats not yet learned rest until the next one.
-  function endRound() {
-    S.rest = S.round.runs.filter(live);
-    S.round = null;
-  }
+  // A line coming back on its own: a line being learned, or a line coming back Again.
+  const single = (id) => {
+    const review = getState(id).status === 'review';
+    return { kind: 'item', queue: review ? 'due' : 'beat', id, again: review || !pooled(id) };
+  };
 
-  const single = (id) => ({ kind: 'item', queue: getState(id).status === 'review' ? 'due' : 'beat', id, again: true });
+  // A number from 0 to 1 for each line, different after every answer: it shakes up the order lines come in.
+  const shake = (id) => parseInt(fnv1a(`${S.goes}:${id}`), 36) / 2 ** 32;
+  // The line straight after the one just answered: asked next, it would be a run in order.
+  const follows = (id) => {
+    const a = S.lastId && byId.get(S.lastId);
+    const b = byId.get(id);
+    return !!a && !!b && a.scene === b.scene && b.index === a.index + 1;
+  };
 
-  // A line still owed a go, with at least `gap` other answers since its last: the longest waiting first.
-  // Four or more learned lines in a row owed a go come back as a run, each far enough from its last go
-  // by its turn. A line of a beat still to be run waits for that run, unless time is up.
-  function owedTask(gap) {
-    const pending = new Set(S.closing ? [] : [...S.rest, ...(S.round ? S.round.runs : [])].filter(live));
-    const owed = Object.keys(S.lines)
-      .filter((id) => owing(id) && !pending.has(byId.get(id).beat) && S.goes - S.lines[id].last >= gap)
-      .sort((a, b) => S.lines[a].last - S.lines[b].last);
+  // A line still owed a go, with at least `gap` other cards since its last: the longest waiting first,
+  // give or take a few cards, so lines come back out of order; not the line after the one just
+  // answered, unless `any`. Lines taught together (tried or read) wait as one until their next go,
+  // from the start of their teaching, so those goes are in any order.
+  function owedTask(gap, any = false) {
+    const owed = Object.keys(S.lines).filter((id) => owing(id) && S.goes - S.lines[id].last >= gap && (any || !follows(id)));
     if (!owed.length) return null;
-    const ids = [];
-    for (let it = byId.get(owed[0]); it; ) {
-      const l = S.lines[it.id];
-      if (!l || !owing(it.id) || getState(it.id).status !== 'review' || S.goes + ids.length - l.last < gap) break;
-      ids.push(it.id);
-      const next = model.items[it.index + 1];
-      it = next && next.scene === it.scene ? next : null;
-    }
-    if (ids.length >= RUN_MIN) return { kind: 'seq', queue: 'run', scene: byId.get(ids[0]).scene, ids, pos: 0, again: true };
-    return single(owed[0]);
+    const wait = (id) => S.goes - (S.lines[id].from ?? S.lines[id].last) + SHUFFLE * shake(id);
+    return single(owed.reduce((a, b) => (wait(b) > wait(a) ? b : a)));
   }
 
   // Nothing else is left: lines still owed come back after one other answer, with a line already right
   // in this sprint in between if need be (at time up, failing that, the next test), and failing
   // everything straight away.
   function finishOwed(p) {
-    const soon = owedTask(1);
+    const soon = owedTask(1) || owedTask(1, true);
     if (soon) return soon;
-    const now = owedTask(0);
+    const now = owedTask(0, true);
     if (!now) return null;
     const done = Object.keys(S.lines)
       .filter((id) => byId.has(id) && S.lines[id].need === 'done')
@@ -258,7 +241,8 @@ export function createSession({ model, index, getPlan, getState, settings, scope
   // already right in this sprint comes back when the curve says it is due again.
   function planTest(p) {
     const ready = new Map([...p.ready].filter(([id]) => !S.lines[id] || !owing(id)));
-    const test = testsOf({ model, index, getState, ready, phase: p.phase, today: p.day })[0];
+    const tests = testsOf({ model, index, getState, ready, phase: p.phase, today: p.day, shuffle: true });
+    const test = tests.find((x) => x.kind === 'run' || !follows(x.id)) || tests[0];
     if (!test) return null;
     if (test.kind === 'run') return { kind: 'seq', queue: 'run', scene: test.scene, ids: fresh([...test.itemIds]), pos: 0 };
     fresh([test.id]);
@@ -298,20 +282,27 @@ export function createSession({ model, index, getPlan, getState, settings, scope
     const p = (lastPlan = getPlan());
     if (S.custom) return customTask(p);
     if (S.closing) return owedTask(GAP) || finishOwed(p);
-    const beats = (S.scope !== 'all' ? [] : S.extra === 'new' ? [...p.newBeats, ...p.ahead] : p.newBeats).filter((id) => beatById.has(id));
-    let t = S.round ? roundTask() : null;
-    if (!t && S.round) endRound();
-    if (!t && S.tests < REVIEW_BURST) t = owedTask(GAP) || planTest(p);
-    if (!t && beats.length) t = startRound(beats);
-    if (S.round) {
-      if (!p.newBeats.includes(t.beatId) && !S.aheadSaid) {
-        S.message = AHEAD_MESSAGE;
-        S.aheadSaid = true;
+    S.pool = S.pool.filter(live);
+    if (S.teach && !(live(S.teach) && toTeach(S.teach))) S.teach = null;
+    if (!S.teach && S.scope === 'all' && room()) {
+      const beats = (S.extra === 'new' ? [...p.newBeats, ...p.ahead] : p.newBeats).filter((id) => beatById.has(id));
+      const next = beats.find((id) => live(id) && !S.pool.includes(id));
+      if (next) {
+        join(next);
+        if (!p.newBeats.includes(next) && !S.aheadSaid) {
+          S.message = AHEAD_MESSAGE;
+          S.aheadSaid = true;
+        }
       }
-      S.tests = 0;
-      return t;
     }
-    t ||= owedTask(GAP) || planTest(p) || extraTask(p) || finishOwed(p);
+    if (S.teach) return teachTask(S.teach);
+    // After every few goes on lines coming back, a check; otherwise the line owed a go that has waited
+    // longest, then a check, then (once today's plan is done, if asked) an extra run.
+    let test;
+    const check = () => (test === undefined ? (test = planTest(p)) : test);
+    const owed = S.streak >= CHECK_EVERY && check() ? null : owedTask(GAP);
+    const t = owed || check() || extraTask(p) || finishOwed(p);
+    S.streak = owed ? S.streak + 1 : 0;
     if (!t) S.planDone = true;
     return t;
   }
@@ -334,6 +325,10 @@ export function createSession({ model, index, getPlan, getState, settings, scope
       const choices = settings.askSpeaker && item.askSpeaker ? speakerChoices(model, item, 6, byId) : [];
       c.askSpeaker = choices.length > 1;
       c.choices = c.askSpeaker ? choices : [];
+    }
+    if (t.queue === 'beat' && t.kind === 'item' && !S.shuffleSaid) {
+      S.message ||= SHUFFLE_MESSAGE;
+      S.shuffleSaid = true;
     }
     if (t.again && !S.againSaid) {
       S.message ||= AGAIN_MESSAGE;
@@ -385,9 +380,12 @@ export function createSession({ model, index, getPlan, getState, settings, scope
         const line = lineOf(currentId(t));
         line.need = 'help';
         if (t.step) {
-          // Taught: on to the next line of the beat. This one is said from the first letters in the
-          // beat's run, once the rest is read.
+          // Taught: on to the next line of the beat. This one is said from the first letters once the
+          // rest is read, on its own and out of order.
           line.taught = true;
+          line.justRead = true;
+          line.from = S.readFrom;
+          line.last = S.goes += 1; // reading takes a card too: gaps are counted from it
           t.done = true;
           card = null;
           return null;
@@ -432,14 +430,22 @@ export function createSession({ model, index, getPlan, getState, settings, scope
 
       S.goes += 1;
       line.last = S.goes;
+      line.justRead = false;
+      if (queue === 'new') line.from = S.readFrom; // tried with its beat: its next go is in any order with theirs
+      else delete line.from;
+      S.lastId = id;
       if (result.pass) {
         if (help) line.helped = true;
+        else line.clean = true;
         // A new line has the first letters once more before it goes without: after its first go right
         // with them, or when it was right at its very first try.
         const again = helpMode() !== 'none' && (help ? prev.passes === 0 && !prev.helped && !line.taught : prev.status === 'new');
-        line.need = again ? 'help' : help ? 'clean' : 'done';
+        // A line being learned is asked again from its cue alone until it is learned, unless time is up.
+        const more = !help && !S.closing && pooled(id) && state.status !== 'review';
+        line.need = again ? 'help' : help || more ? 'clean' : 'done';
       } else {
         line.missed = true;
+        line.clean = false;
         line.need = missNeed(prev);
         line.taught = false; // read again, it has the first letters twice, as a line not yet taught does
       }
@@ -451,7 +457,6 @@ export function createSession({ model, index, getPlan, getState, settings, scope
         S.stats.learnedItems += 1;
         S.stats.learnedWords += item.words;
       }
-      if ((queue === 'due' || queue === 'run') && !t.custom && !t.again) S.tests += 1;
 
       if (t.kind === 'item') {
         if (t.pretest) {
@@ -482,8 +487,13 @@ export function createSession({ model, index, getPlan, getState, settings, scope
     close() {
       if (S.closing) return;
       S.closing = true;
-      S.round = null;
+      S.teach = null;
       S.againSaid = true;
+      // Only lines this sprint has shown are finished: the rest of the beats being learned wait.
+      const showing = S.task && !S.task.done ? currentId(S.task) : null;
+      for (const [id, line] of Object.entries(S.lines)) if (line.last < 0 && id !== showing) delete S.lines[id];
+      // Right from the cue alone once in this sprint is enough at time up.
+      for (const line of Object.values(S.lines)) if (line.clean && line.need === 'clean') line.need = 'done';
       if (S.task && S.task.kind === 'seq') {
         if (S.task.custom) S.custom.pos -= S.task.ids.length - S.task.pos;
         S.task.done = true;

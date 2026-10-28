@@ -4,7 +4,7 @@
 // word perfect falls to 90%. t hours after it was last tested the chance is R = (1 + F t / S)^(-1/2),
 // a power curve: forgetting is quick at first, then slows (F = 19/81 puts R at 0.9 when t = S).
 // * A brand new line starts at an hour (4 hours if he knew it before being taught). By then it has
-//   been read, said from the first letters and recalled in its beat runs, and same day goes add
+//   been read, said from the first letters and recalled from its cue twice, and same day goes add
 //   little that lasts, so it comes back once or twice more on the day it is learned, then less and
 //   less often.
 // * Recalling it multiplies S: most when it was close to being forgotten (the spacing effect), less

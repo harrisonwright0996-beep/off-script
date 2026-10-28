@@ -43,7 +43,7 @@ test('Reveal tapped twice: Done still waits for its own tap', async ({ page }) =
   await importScript(page);
   await page.getByRole('button', { name: 'Start sprint' }).click();
   for (let i = 0; i < 20 && (await page.locator('h1').textContent()) === 'New'; i++) await answerCard(page);
-  await expect(page.getByRole('heading', { name: 'Beat run', exact: true })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Learning', exact: true })).toBeVisible();
   await doubleTap(page, page.getByRole('button', { name: 'Reveal' }));
   await expect(page.getByRole('button', { name: 'Done' })).toBeVisible();
   await expect(page.locator('.result')).toHaveCount(0);
