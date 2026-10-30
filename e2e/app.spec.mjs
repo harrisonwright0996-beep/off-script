@@ -1,5 +1,4 @@
-import { test, expect } from '@playwright/test';
-import { importScript, answerCard } from './helpers.mjs';
+import { test, expect, importScript, answerCard } from './helpers.mjs';
 
 test('first run: import the invented play, see the plan', async ({ page }) => {
   await importScript(page);

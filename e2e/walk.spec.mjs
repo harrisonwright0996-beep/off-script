@@ -1,5 +1,4 @@
-import { test, expect } from '@playwright/test';
-import { importScript, importPack } from './helpers.mjs';
+import { test, expect, importScript, importPack } from './helpers.mjs';
 
 const shot = (page, name) => page.screenshot({ path: `shots/${test.info().project.name}-${name}.png` });
 

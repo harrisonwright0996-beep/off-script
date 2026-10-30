@@ -1,6 +1,5 @@
-import { test, expect } from '@playwright/test';
 import { readFileSync } from 'node:fs';
-import { importScript, importPack, answerCard, chooseFile } from './helpers.mjs';
+import { test, expect, importScript, importPack, answerCard, chooseFile } from './helpers.mjs';
 
 const shot = (page, name) => page.screenshot({ path: `shots/${test.info().project.name}-${name}.png`, fullPage: true });
 

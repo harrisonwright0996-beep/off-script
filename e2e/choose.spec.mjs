@@ -1,5 +1,4 @@
-import { test, expect } from '@playwright/test';
-import { importScript, answerCard } from './helpers.mjs';
+import { test, expect, importScript, answerCard } from './helpers.mjs';
 
 const shot = (page, name) => page.screenshot({ path: `shots/${test.info().project.name}-${name}.png` });
 const cardId = (page) => page.evaluate(() => window.offScript.card.item.id);

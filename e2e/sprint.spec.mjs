@@ -1,6 +1,5 @@
-import { test, expect } from '@playwright/test';
 import { spawn } from 'node:child_process';
-import { importScript, answerCard, keysOf, seedOnce } from './helpers.mjs';
+import { test, expect, importScript, answerCard, keysOf, seedOnce } from './helpers.mjs';
 import { fixtureModel } from '../tests/helpers.mjs';
 import { blankOf, firstLettersOf, joinTokens, phraseStarts } from '../src/tokens.js';
 
@@ -277,4 +276,33 @@ test('a long line right from its cue once: first letters only at the start of ea
   await page.getByRole('button', { name: 'Reveal' }).click();
   await page.getByRole('button', { name: 'Done' }).click();
   await expect(page.locator('.result.perfect')).toHaveText(/Right with the first letters/);
+});
+
+test('after off script day: Today says so, and a sprint takes a miss first, then the line just falling due, then the one slipped further', async ({ page }) => {
+  await importScript(page);
+  const [missed, justDue, slipped] = await page.evaluate(() => {
+    const o = window.offScript;
+    Object.assign(o.settings, { lastNewDay: '2020-01-01', deadline: '2020-01-02', showDay: '2099-01-01' });
+    const day = o.today();
+    const hours = (n) => Date.now() - n * 3600000;
+    const put = (id, stability, lastTime, lastResult) =>
+      o.states.set(id, { id, status: 'review', firstDay: day, learnedDay: day, passes: 3, misses: 0, helped: 1, lapses: 0, stability, passDays: [day], missDays: [], lastResult, lastDay: day, lastTime, lastMode: 'type' });
+    for (const it of o.model.items) put(it.id, 2000, hours(1), 'pass'); // everything strong: nothing else ready
+    const ids = [o.model.scenes[3].itemIds[4], o.model.scenes[1].itemIds[2], o.model.scenes[1].itemIds[8]];
+    put(ids[0], 1, hours(1), 'miss');
+    put(ids[1], 1, hours(2), 'pass'); // 83% now
+    put(ids[2], 1, hours(6), 'pass'); // 64% now
+    o.go('today');
+    return ids;
+  });
+  await expect(page.getByText('Checks now take the lines just falling due first, so the fewest slip; any that have slipped further come round as time allows.')).toBeVisible();
+  await page.getByRole('button', { name: 'Start sprint' }).click();
+  await page.waitForFunction(() => window.offScript.card);
+  const goes = [];
+  for (const id of [missed, justDue, slipped]) {
+    const shown = await page.evaluate(() => window.offScript.card.item.id);
+    expect(shown).toBe(id);
+    goes.push(await answerCard(page));
+  }
+  expect(goes).toEqual(['help', 'floor', 'help']); // the first letters for the miss and the line below 80%
 });

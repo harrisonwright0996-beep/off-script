@@ -1,7 +1,6 @@
 // Quick double taps. On the phone the second tap of a double tap lands on whatever the first one
 // brought up; it must never answer, skip or throw away anything.
-import { test, expect } from '@playwright/test';
-import { importScript, importPack, answerCard, keysOf } from './helpers.mjs';
+import { test, expect, importScript, importPack, answerCard, keysOf } from './helpers.mjs';
 import { neighbours } from '../src/grade.js';
 
 // Two touches at the middle of `locator`, `gap` ms apart, after a pause so that the first touch

@@ -1,8 +1,33 @@
 // Shared steps for the browser tests. Only the invented play is ever loaded.
-import { expect } from '@playwright/test';
+import { test as base, expect } from '@playwright/test';
 import { buildFixtureDocx } from '../tests/fixtures/night-ferry.mjs';
 import { fixtureModel } from '../tests/helpers.mjs';
 import { buildFixturePack } from '../tests/fixtures/audio-pack.mjs';
+
+export { expect };
+
+// Every test starts at noon on 28 October, whatever the real date, and time runs on from there:
+// what a sprint shows depends on the date, and these tests are about the learning days of the plan.
+const START = new Date('2026-10-28T12:00:00').getTime();
+function shiftClock(offset) {
+  const Real = Date;
+  globalThis.Date = class extends Real {
+    constructor(...args) {
+      if (args.length) super(...args);
+      else super(Real.now() + offset);
+    }
+
+    static now() {
+      return Real.now() + offset;
+    }
+  };
+}
+export const test = base.extend({
+  context: async ({ context }, use) => {
+    await context.addInitScript(shiftClock, START - Date.now());
+    await use(context);
+  },
+});
 
 export const DOCX = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
 

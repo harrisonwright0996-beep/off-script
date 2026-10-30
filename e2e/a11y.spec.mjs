@@ -1,7 +1,6 @@
 // Accessibility: axe on every screen, in every theme. No serious or critical problems allowed.
-import { test, expect } from '@playwright/test';
 import { createRequire } from 'node:module';
-import { importScript, answerCard, keysOf, seedOnce } from './helpers.mjs';
+import { test, expect, importScript, answerCard, keysOf, seedOnce } from './helpers.mjs';
 
 const AXE = createRequire(import.meta.url).resolve('axe-core/axe.min.js');
 test.use({ bypassCSP: true }); // only so axe itself can be added to the page

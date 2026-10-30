@@ -6,7 +6,7 @@
 // final days before off script day and before show week, and on off script day).
 // Tests: on walks, a stretch of ready lines in flow, otherwise the line on its own from its cue; in
 // sprints, every line on its own and out of order; in the final days, whole scenes from the top, the
-// weakest scene first. Most at risk first.
+// weakest scene first. Most at risk first, but after off script day the least overdue first (testsOf).
 // New: whole beats in running order, up to today's share of what is left (a little more than an even
 // spread, so more comes while reviews are light). The sprint puts the tests in between the new beats.
 // It adapts both ways: the share is what is left over the days left, so a big day makes later days

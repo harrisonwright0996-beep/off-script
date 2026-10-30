@@ -238,7 +238,7 @@ export function createSession({ model, index, getPlan, getState, settings, scope
     return ids;
   }
 
-  // The test most at risk now. Lines still owed a go are left out (they come back on their own); a line
+  // The next test, in testsOf's order. Lines still owed a go are left out (they come back on their own); a line
   // already right in this sprint comes back when the curve says it is due again.
   function planTest(p) {
     const ready = new Map([...p.ready].filter(([id]) => !S.lines[id] || !owing(id)));
