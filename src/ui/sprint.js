@@ -1,11 +1,11 @@
 // The sprint: one card at a time from the session (session.js), answered on the keypad (Type) or by
-// tapping the words missed (Say); a first letters card is always said. Every answer is saved at once,
+// tapping the words missed (Say); a card with help on it is always said. Every answer is saved at once,
 // and so is the sprint, so closing the app loses nothing. Time is a slim bar that only moves when he
 // does something; at time up nothing new comes, only the lines still to finish, then Sprint done.
 import { h, clear, screen, button, announce, focusHeading, num, plural, drawn, settled } from './dom.js';
 import { createSession, linesLeft } from '../session.js';
 import { createTypeCheck, sayMisses, makeResult, describeResult, repeatMisses, troubleNote } from '../grade.js';
-import { blankOf, firstLettersOf, lettersShown } from '../tokens.js';
+import { blankOf, firstLettersOf, gapsOf, lettersShown } from '../tokens.js';
 import { canSpeak, speak, stopSpeaking } from '../tts.js';
 import { untilText } from '../plan.js';
 import { keypad } from './keypad.js';
@@ -29,13 +29,24 @@ export function tokenView(tokens, upTo = tokens.length, misses = new Set()) {
   return out;
 }
 
+const blankView = (t, drawn = blankOf(t)) => h('span', { class: 'blank' }, h('span', { 'aria-hidden': 'true' }, drawn), h('span', { class: 'visually-hidden' }, ` ${blankOf(t).replace('_', 'blank')} `));
+
 // A first letters card's line: the first letters where the card shows them, a blank for each other
 // word (session.js says how many to show).
 export function lettersView(tokens, shown) {
   const out = [];
   tokens.forEach((t, i) => {
-    if (t.k === null || shown.has(i)) out.push(firstLettersOf(t));
-    else out.push(h('span', { class: 'blank' }, h('span', { 'aria-hidden': 'true' }, blankOf(t)), h('span', { class: 'visually-hidden' }, ` ${blankOf(t).replace('_', 'blank')} `)));
+    out.push(t.k === null || shown.has(i) ? firstLettersOf(t) : blankView(t));
+    if (i < tokens.length - 1) out.push(t.a);
+  });
+  return out;
+}
+
+// A gaps card's line: every word but those taken out, each a gap long enough to see among whole words.
+export function gapsView(tokens, gaps) {
+  const out = [];
+  tokens.forEach((t, i) => {
+    out.push(gaps.has(i) ? blankView(t, blankOf(t).replace('_', '____')) : h('span', { class: t.k === null ? 'tok note' : 'tok' }, t.d));
     if (i < tokens.length - 1) out.push(t.a);
   });
   return out;
@@ -55,7 +66,9 @@ const COMES_BACK = {
   clean: 'It comes back later without the first letters.',
   read: 'It comes back later to read first.',
 };
-const comesBack = (rec) => (rec.later ? COMES_BACK[rec.need] : null);
+const comesBack = (rec) => (rec.back ? 'Once more, with a little more help.' : rec.later ? COMES_BACK[rec.need] : null);
+// A go with help on it, right.
+const RIGHT_WITH = { gaps: 'Right with the gaps', help: 'Right with the first letters' };
 
 // scope: 'all' or 'tests' (Just 2 minutes). minutes: the sprint length (settings by default).
 // custom: { scene, itemIds } for Run this scene. extra: 'new' or 'runs' to keep going after the plan.
@@ -153,7 +166,8 @@ export async function showSprint(ctx, { scope = 'all', minutes = null, custom = 
     const it = c.item;
     const part = it.parts > 1 ? `, part ${it.part + 1} of ${it.parts}` : '';
     if (c.progress) return h('p', { class: 'where' }, `Line ${c.progress.pos} of ${c.progress.total}, speech ${it.n}${part}`);
-    return h('p', { class: 'where' }, `${heading(it.scene)}, speech ${it.n}${part}`);
+    const rung = c.rung ? `, step ${c.rung.pos} of ${c.rung.total}` : '';
+    return h('p', { class: 'where' }, `${heading(it.scene)}, speech ${it.n}${part}${rung}`);
   }
 
   // The cue: who speaks and what they say, or the start of a scene. A cue made longer, so that only
@@ -203,7 +217,7 @@ export async function showSprint(ctx, { scope = 'all', minutes = null, custom = 
         [cueBlock(c.cue), h('p', { class: 'speaker' }, c.item.speaker), h('p', { class: 'line' }, tokenView(c.item.tokens)), h('p', { class: 'prompt' }, c.prompt)],
         [button('Next', act(() => choose('next')), { class: 'btn primary' }), readAloud(c.item.text)].filter(Boolean),
       );
-    } else if (c.step === 'help') helpCard(c);
+    } else if (c.step === 'help' || c.step === 'gaps') helpCard(c);
     else floor(c);
     if (focus) focusHeading(ctx.root);
   }
@@ -212,8 +226,7 @@ export async function showSprint(ctx, { scope = 'all', minutes = null, custom = 
     tick();
     const c = session.choose(action);
     await saveSprint();
-    if (c) showCard(c);
-    else carryOn(() => session.advance()); // a line taught is read: on to the next card, as after an answer
+    showCard(c);
   }
 
   // Say: reveal the line, tap any word missed or changed, then Done with the words tapped.
@@ -256,16 +269,18 @@ export async function showSprint(ctx, { scope = 'all', minutes = null, custom = 
   // The words missed in a line before, from the answers the app keeps (token indices).
   const missedBefore = (id) => [...new Set(ctx.events.filter((e) => e.id === id && e.missed).flatMap((e) => e.missed))];
 
-  // First letters: the speaker and the first letters, said aloud, then checked as in Say. On a long
-  // line they thin out as it gets stronger, with a blank for each word without its letter.
+  // A line with help on it: the speaker and the line with some words taken out, or the first letters,
+  // said aloud, then checked as in Say. On a long line the first letters thin out as it gets
+  // stronger, with a blank for each word without its letter.
   function helpCard(c) {
     const item = c.item;
     const level = c.letters || 'all';
     const shown = lettersShown(item.tokens, level, level === 'missed' ? missedBefore(item.id) : []);
-    const answerArea = h('div', { class: 'answer-area', role: 'group', tabindex: '-1', 'aria-label': 'Your line' }, h('p', { class: 'line' }, lettersView(item.tokens, shown)));
+    const view = c.step === 'gaps' ? gapsView(item.tokens, gapsOf(item.tokens, c.turn)) : lettersView(item.tokens, shown);
+    const answerArea = h('div', { class: 'answer-area', role: 'group', tabindex: '-1', 'aria-label': 'Your line' }, h('p', { class: 'line' }, view));
     const footBox = h('div', { class: 'stack-foot' });
     const blanks = item.tokens.some((t, i) => t.k !== null && !shown.has(i));
-    const prompt = blanks ? 'Say it aloud, blanks too, then reveal it.' : 'Say it aloud from the first letters, then reveal it.';
+    const prompt = c.step === 'gaps' ? 'Say it aloud, gaps too, then reveal it.' : blanks ? 'Say it aloud, blanks too, then reveal it.' : 'Say it aloud from the first letters, then reveal it.';
     frame(c, [cueBlock(c.cue), h('p', { class: 'speaker' }, speakerName(item)), answerArea], [footBox]);
     sayCheck(item.tokens, answerArea, footBox, prompt, (misses, ms) => finish(c, makeResult({ misses, mode: 'say', ms })));
   }
@@ -371,7 +386,7 @@ export async function showSprint(ctx, { scope = 'all', minutes = null, custom = 
     await ctx.saveAnswer(rec);
     undo.push(rec);
     await saveSprint();
-    const text = rec.help && result.pass ? 'Right with the first letters' : result.slip ? 'Counted right: a slip of the finger' : describeResult(result, c.item.tokens, c.item.speaker);
+    const text = rec.help && result.pass ? RIGHT_WITH[c.step] : result.slip ? 'Counted right: a slip of the finger' : describeResult(result, c.item.tokens, c.item.speaker);
     const note = comesBack(rec);
     const earlier = ctx.events.filter((e) => e !== rec.event);
     const trouble = result.pass ? null : troubleNote(c.item.tokens, repeatMisses(earlier, c.item.id, result.misses));

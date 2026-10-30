@@ -70,9 +70,9 @@ export async function importPack(page) {
 // The keys for the line on show: one first letter or digit per word.
 export const keysOf = (page) => page.evaluate(() => window.offScript.card.item.tokens.filter((t) => t.k !== null).map((t) => t.k).join(''));
 
-// Answers whatever card is on show, the way he would: teach new lines, say first letters cards,
+// Answers whatever card is on show, the way he would: teach new lines, say cards with help on them,
 // choose the right speaker, type the line. miss: type a wrong first key, or tap the first word as
-// missed on a first letters card. Returns the card's step.
+// missed on a card with help. Returns the card's step.
 export async function answerCard(page, { miss = false } = {}) {
   await page.waitForFunction(() => window.offScript && window.offScript.card && document.querySelector('h1').textContent === window.offScript.card.label);
   const card = await page.evaluate(() => {
@@ -82,14 +82,19 @@ export async function answerCard(page, { miss = false } = {}) {
   if (card.step === 'test') await page.getByRole('button', { name: 'Teach me' }).click();
   else if (card.step === 'front') await page.getByRole('button', { name: 'Next', exact: true }).click();
   else {
-    if (card.step === 'help') {
+    const say = async () => {
       await page.getByRole('button', { name: 'Reveal' }).click();
       if (miss) await page.getByRole('group', { name: 'Tap any word you missed or changed' }).getByRole('button').first().click();
       await page.getByRole('button', { name: 'Done' }).click();
-    } else {
+    };
+    if (card.step === 'help' || card.step === 'gaps') await say();
+    else {
       if (card.ask) await page.getByRole('group', { name: 'Who speaks next?' }).getByRole('button', { name: card.speaker, exact: true }).click();
-      const keys = await keysOf(page);
-      await page.keyboard.type(miss ? (keys[0] === 'z' ? 'x' : 'z') + keys.slice(1) : keys);
+      if (await page.evaluate(() => window.offScript.settings.mode === 'say')) await say();
+      else {
+        const keys = await keysOf(page);
+        await page.keyboard.type(miss ? (keys[0] === 'z' ? 'x' : 'z') + keys.slice(1) : keys);
+      }
     }
     await expect(page.locator('.result')).toBeVisible();
     await page.getByRole('button', { name: 'Next', exact: true }).click();

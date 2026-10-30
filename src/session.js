@@ -1,20 +1,23 @@
 // The sprint: which card comes next, and what an answer does.
-// Cards: 'test' (cue, then Try it or Teach me), 'front' (the full line, to read), 'help' (the first
-// letters: said aloud, revealed, any word missed tapped), 'floor' (from the cue alone, answered and checked).
+// Cards: 'test' (cue, then Try it or Teach me), 'front' (the full line, to read), 'gaps' (the line with
+// some words taken out: said aloud, revealed, any word missed tapped), 'help' (the first letters, the
+// same way), 'floor' (from the cue alone, answered and checked).
 // Every line the sprint shows needs one go right from the cue alone before the sprint is over; only that
 // counts as right. Its first go is with the first letters while the line is new to him (right from the
 // cue alone fewer than three times), when it was missed last time, or when his forgetting curve says he
-// may not manage without (a chance of recall now below 80%). A new line has the first letters before it
-// is first asked without them: taught, it is read with the rest of its beat and said from the first
-// letters a few cards later, so there is a gap between reading it and saying it (a go straight after
-// reading is hardly a recall); right at its first try, its next go is with the first letters. A miss
+// may not manage without (a chance of recall now below 80%). A line never yet right is tried from its
+// cue first, or taught there and then, staying with it for a few cards in a row with less help each
+// time (the ladder, rungsOf): read it, say it with some words taken out, from every first letter, from
+// the start of each phrase, then from the cue alone. A miss on the ladder goes one rung back, twice at
+// most; after that the line comes back later, so no line holds him up for long. A miss anywhere else
 // shows the right line and moves on: the line comes back after at least three other answers, with the
 // first letters, then without them.
-// New lines come two beats at a time. A beat's lines are read in order, one by one (each tried from its
-// cue first, or read); then each line comes back on its own and out of order, with at least three
-// other answers in between, until it is learned: right from its cue alone twice. Out of order, each
-// line is found from its cue, not from the line before. The next beat is read once one of the two is
-// learned and every line read has had a go. After every three goes on lines coming back there is a
+// New lines come in script order, from two beats at a time at most. Once off the ladder, or right at
+// its first try, a line comes back on its own and out of order, with at least three other answers in
+// between, until it is learned: right from its cue alone twice. Out of order, each line is found from
+// its cue, not from the line before. A line owed a go comes before the next line is taught, so lines
+// come back in between ladders; the next beat starts once every line of the last has had a go and
+// one of the two is learned. After every three goes on lines coming back there is a
 // check of an older line, the most at risk first, so what is learned is kept up in between; when
 // nothing new is left, it is checks, each line on its own and out of order too (in the final days,
 // whole scenes from the top).
@@ -36,6 +39,7 @@ export const AGAIN_MESSAGE = 'Lines come back later in the sprint until they are
 export const CLOSING_MESSAGE = "Time's up. Just the lines still to finish, then you're done.";
 export const LETTERS_MESSAGE = 'As a line gets stronger, it shows fewer first letters. Say every word, the blanks too.';
 export const SHUFFLE_MESSAGE = 'Each new line comes back on its own and out of order, until it is right from its cue twice.';
+export const LADDER_MESSAGE = 'A new line stays with you for a few goes, with less help each time.';
 
 export const GAP = 3; // other answers before a line comes back
 export const POOL = 2; // beats being learned at a time
@@ -65,6 +69,14 @@ export function lettersOf(s, words, missedHere = false) {
   if (s.passes === 2) return 'missed';
   return 'phrases';
 }
+
+// The ladder: the cards a line has in a row the first time it is taught, from the line itself to the
+// cue alone, each with less help than the one before. A shorter line has fewer: under 4 words there
+// is nothing to take out that is not most of the line, and under 3 the first letters are hardly
+// less than the words. The start of each phrase comes only on a long line, as it does at checks.
+const RUNG_STEP = { read: 'front', gaps: 'gaps', all: 'help', phrases: 'help', floor: 'floor' };
+export const rungsOf = (words) => ['read', words >= 4 && 'gaps', words >= 3 && 'all', words >= LONG && 'phrases', 'floor'].filter(Boolean);
+export const BACKS = 2; // misses on a ladder that go one rung back; one more and the line leaves it
 
 const FRONT_PROMPTS = [
   'Say it aloud, meaning it.',
@@ -149,15 +161,48 @@ export function createSession({ model, index, getPlan, getState, settings, scope
 
   // What this sprint knows about a line it has shown: the go it needs next, when it last had one (in
   // cards), whether it was missed, right with the first letters, or right from the cue alone earlier
-  // in the sprint, whether it was taught (read with its beat) in it, whether it is still waiting for
-  // its first go since being read (justRead), and when the teaching it was tried or read in began
-  // (from), until its next go.
+  // in the sprint, whether it is still waiting for its first go since being taught (justRead), and
+  // when the teaching of its beat began (from), until its next go.
   function lineOf(id) {
     return (S.lines[id] ||= { need: firstNeed(id), last: -GAP, missed: false, helped: false });
   }
 
   const currentId = (t) => (t.kind === 'item' ? t.id : t.ids[t.pos]);
   const currentStep = (t) => t.step || STEP[lineOf(currentId(t)).need];
+
+  // Reading a line never yet right, with the help left to Off Script: it is on the ladder.
+  function startLadder(t) {
+    const id = currentId(t);
+    if (t.ladder || t.kind !== 'item' || helpMode() !== 'auto' || !needsTeaching(getState(id))) return;
+    Object.assign(t, { ladder: rungsOf(byId.get(id).words), rung: 0, backs: 0, step: 'front' });
+  }
+
+  function toRung(t, rung) {
+    t.rung = rung;
+    t.step = RUNG_STEP[t.ladder[rung]];
+  }
+
+  // An answer on the ladder. Right, on up a rung; right at the top, the line joins those coming back,
+  // with the first letters first, or at time up (or outside a sprint) it is done. Missed, one rung
+  // back; missed once too often, it leaves the ladder and comes back later. Returns whether it went back.
+  function climb(t, line, prev, pass) {
+    if (pass && t.rung < t.ladder.length - 1) {
+      toRung(t, t.rung + 1);
+      return false;
+    }
+    if (!pass && t.backs < BACKS) {
+      t.backs += 1;
+      toRung(t, Math.max(0, t.rung - 1));
+      return true;
+    }
+    t.done = true;
+    line.justRead = true;
+    line.missed = !pass;
+    line.clean = pass;
+    if (pass) line.need = S.closing || !pooled(t.id) ? 'done' : 'help';
+    else line.need = missNeed(prev);
+    return false;
+  }
   const owing = (id) => byId.has(id) && S.lines[id].need !== 'done';
 
   // A line of a beat still to be taught: never yet right, and not yet shown in this sprint.
@@ -172,8 +217,8 @@ export function createSession({ model, index, getPlan, getState, settings, scope
   // A line of one of the beats being learned.
   const pooled = (id) => S.pool.includes(byId.get(id).beat);
 
-  // A beat joins the two being learned: its lines still to be taught are read first, one by one; the
-  // rest, started before and not yet learned, are owed a go straight away.
+  // A beat joins the two being learned: the lines started before and not yet learned are owed a go
+  // straight away; those still to be taught follow, one by one.
   function join(beatId) {
     S.pool.push(beatId);
     for (const id of beatById.get(beatId).itemIds) {
@@ -188,7 +233,7 @@ export function createSession({ model, index, getPlan, getState, settings, scope
     }
   }
 
-  // Room for the next beat: fewer than two being learned, and every line read has had a go since.
+  // Room for the next beat: fewer than two being learned, and every line taught has had a go since.
   const room = () => S.pool.length < POOL && !Object.values(S.lines).some((l) => l.justRead);
 
   // A line coming back on its own: a line being learned, or a line coming back Again.
@@ -296,12 +341,14 @@ export function createSession({ model, index, getPlan, getState, settings, scope
         }
       }
     }
-    if (S.teach) return teachTask(S.teach);
     // After every few goes on lines coming back, a check; otherwise the line owed a go that has waited
-    // longest, then a check, then (once today's plan is done, if asked) an extra run.
+    // longest, then the next line to teach, then a check, then (once today's plan is done, if asked)
+    // an extra run.
     let test;
     const check = () => (test === undefined ? (test = planTest(p)) : test);
-    const owed = S.streak >= CHECK_EVERY && check() ? null : owedTask(GAP);
+    const checkNow = S.streak >= CHECK_EVERY && !!check();
+    const owed = checkNow ? null : owedTask(GAP);
+    if (S.teach && !owed && !checkNow) return teachTask(S.teach);
     const t = owed || check() || extraTask(p) || finishOwed(p);
     S.streak = owed ? S.streak + 1 : 0;
     if (!t) S.planDone = true;
@@ -314,9 +361,21 @@ export function createSession({ model, index, getPlan, getState, settings, scope
     const c = { key: ++S.seq, step, queue: t.queue, item, cue: cueOf(index, item), label: t.again && t.kind === 'item' ? 'Again' : LABELS[t.queue] };
     if (t.kind === 'seq' && t.queue === 'run') c.label = `Run: ${model.scenes[item.scene].heading}`;
     if (t.kind === 'seq') c.progress = { pos: t.pos + 1, total: t.ids.length };
-    if (step === 'front') c.prompt = FRONT_PROMPTS[S.frontTurn++ % FRONT_PROMPTS.length];
+    if (step === 'front') {
+      startLadder(t);
+      c.prompt = FRONT_PROMPTS[S.frontTurn++ % FRONT_PROMPTS.length];
+    }
+    if (t.ladder) {
+      c.rung = { pos: t.rung + 1, total: t.ladder.length };
+      if (!S.ladderSaid && !S.message) {
+        S.message = LADDER_MESSAGE;
+        S.ladderSaid = true;
+      }
+    }
+    if (step === 'gaps') c.turn = t.backs;
     if (step === 'help') {
-      c.letters = helpMode() === 'auto' ? lettersOf(getState(item.id), item.words, lineOf(item.id).missed) : 'all';
+      if (t.ladder) c.letters = t.ladder[t.rung];
+      else c.letters = helpMode() === 'auto' ? lettersOf(getState(item.id), item.words, lineOf(item.id).missed) : 'all';
       if (c.letters !== 'all' && !S.lettersSaid) {
         S.message ||= LETTERS_MESSAGE;
         S.lettersSaid = true;
@@ -368,8 +427,7 @@ export function createSession({ model, index, getPlan, getState, settings, scope
       return card;
     },
 
-    // For test and front cards. action: 'try' | 'teach' | 'next'. Returns the card that follows, or null
-    // once a line taught is read: then advance(), as after an answer.
+    // For test and front cards. action: 'try' | 'teach' | 'next'. Returns the card that follows.
     choose(action) {
       const t = S.task;
       const step = currentStep(t);
@@ -379,40 +437,33 @@ export function createSession({ model, index, getPlan, getState, settings, scope
       } else if (step === 'front') {
         if (action !== 'next') return card; // only Next moves on from a line being read
         const line = lineOf(currentId(t));
-        line.need = 'help';
-        if (t.step) {
-          // Taught: on to the next line of the beat. This one is said from the first letters once the
-          // rest is read, on its own and out of order.
-          line.taught = true;
-          line.justRead = true;
-          line.from = S.readFrom;
+        if (t.ladder) {
           line.last = S.goes += 1; // reading takes a card too: gaps are counted from it
-          t.done = true;
-          card = null;
-          return null;
-        }
+          toRung(t, t.rung + 1);
+        } else line.need = 'help';
       }
       card = cardFor(t);
       return card;
     },
 
-    // For help and floor cards. result: { pass, misses: [token indices], speakerWrong, mode }.
-    // Returns the event and new state to save, the snapshot for undo, what the line needs next and
-    // whether it comes back later for it.
+    // For gaps, help and floor cards. result: { pass, misses: [token indices], speakerWrong, mode }.
+    // Returns the event and new state to save, the snapshot for undo, what the line needs next,
+    // whether it comes back later for it, and whether it went a rung back on the ladder.
     answer(result) {
       const snapshot = structuredClone(S);
       const t = S.task;
       const id = currentId(t);
       const item = byId.get(id);
       const line = lineOf(id);
-      const help = currentStep(t) === 'help';
+      const step = currentStep(t);
+      const help = step === 'help' || step === 'gaps';
       const time = now();
       const day = dayKey(new Date(time));
       const prev = getState(id);
       const queue = t.queue;
       const relearn = line.missed;
       const primed = !help && line.helped && !relearn;
-      const pretest = !help && (!!t.pretest || prev.status === 'new');
+      const pretest = !help && !t.ladder && (!!t.pretest || prev.status === 'new');
       const { k, typing } = plan();
       // Typed right from the cue alone, but more than twice as slowly a word as usual once under way.
       const perWord = typedPerWord(result, item);
@@ -422,6 +473,7 @@ export function createSession({ model, index, getPlan, getState, settings, scope
       const event = { time, day, id, pass: result.pass, mode: result.mode, queue, misses: result.misses.length, speakerWrong: !!result.speakerWrong, relearn, prev };
       if (help) event.help = true;
       if (primed) event.primed = true;
+      if (t.ladder) event.rung = t.ladder[t.rung];
       if (slow) event.slow = true;
       // Which words, and how quickly: for trouble words and fluency later.
       if (result.misses.length) event.missed = [...result.misses];
@@ -435,12 +487,15 @@ export function createSession({ model, index, getPlan, getState, settings, scope
       if (queue === 'new') line.from = S.readFrom; // tried with its beat: its next go is in any order with theirs
       else delete line.from;
       S.lastId = id;
-      if (result.pass) {
-        if (help) line.helped = true;
-        else line.clean = true;
+      if (help && result.pass) line.helped = true;
+      const back = !!t.ladder && climb(t, line, prev, result.pass);
+      if (t.ladder) {
+        // climb() has said what comes next.
+      } else if (result.pass) {
+        if (!help) line.clean = true;
         // A new line has the first letters once more before it goes without: after its first go right
         // with them, or when it was right at its very first try.
-        const again = helpMode() !== 'none' && (help ? prev.passes === 0 && !prev.helped && !line.taught : prev.status === 'new');
+        const again = helpMode() !== 'none' && (help ? prev.passes === 0 && !prev.helped : prev.status === 'new');
         // A line being learned is asked again from its cue alone until it is learned, unless time is up.
         const more = !help && !S.closing && pooled(id) && state.status !== 'review';
         line.need = again ? 'help' : help || more ? 'clean' : 'done';
@@ -448,7 +503,6 @@ export function createSession({ model, index, getPlan, getState, settings, scope
         line.missed = true;
         line.clean = false;
         line.need = missNeed(prev);
-        line.taught = false; // read again, it has the first letters twice, as a line not yet taught does
       }
       if (!help) {
         S.stats.answered += 1;
@@ -459,7 +513,9 @@ export function createSession({ model, index, getPlan, getState, settings, scope
         S.stats.learnedWords += item.words;
       }
 
-      if (t.kind === 'item') {
+      if (t.ladder) {
+        // climb() has moved it on, or finished it.
+      } else if (t.kind === 'item') {
         if (t.pretest) {
           // Test first: if two of the first three lines tried in a beat are missed, teach the rest first.
           const tr = (S.tried[t.beatId] ||= { n: 0, missed: 0 });
@@ -470,7 +526,7 @@ export function createSession({ model, index, getPlan, getState, settings, scope
             S.message = TEACH_FIRST_MESSAGE;
           }
         }
-        if (t.pretest && !result.pass) t.step = 'front'; // a missed try is taught: read it, then the first letters
+        if (t.pretest && !result.pass) t.step = 'front'; // a missed try is taught there and then
         else t.done = true;
         t.pretest = false;
       } else {
@@ -480,7 +536,7 @@ export function createSession({ model, index, getPlan, getState, settings, scope
       card = null;
       // Whether the line comes back later in the sprint (a missed try is taught there and then instead).
       const later = line.need !== 'done' && (t.kind === 'seq' || !!t.done);
-      return { event, state, snapshot, need: line.need, help, later };
+      return { event, state, snapshot, need: line.need, help, later, back };
     },
 
     // Time is up: nothing new from here. A run under way stops; what it showed comes back on its own,
@@ -494,7 +550,7 @@ export function createSession({ model, index, getPlan, getState, settings, scope
       const showing = S.task && !S.task.done ? currentId(S.task) : null;
       for (const [id, line] of Object.entries(S.lines)) if (line.last < 0 && id !== showing) delete S.lines[id];
       // Right from the cue alone once in this sprint is enough at time up.
-      for (const line of Object.values(S.lines)) if (line.clean && line.need === 'clean') line.need = 'done';
+      for (const line of Object.values(S.lines)) if (line.clean) line.need = 'done';
       if (S.task && S.task.kind === 'seq') {
         if (S.task.custom) S.custom.pos -= S.task.ids.length - S.task.pos;
         S.task.done = true;

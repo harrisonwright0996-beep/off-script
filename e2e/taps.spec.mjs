@@ -28,14 +28,14 @@ async function card(page) {
 // Cards are drawn once the step before is saved: waits for the card on show to change from `key`.
 const moved = (page, key) => page.waitForFunction((k) => window.offScript.card && window.offScript.card.key !== k, key);
 
-test('Next after reading a line, tapped twice: the next line is still to choose, not started', async ({ page }) => {
+test('Next after reading a line, tapped twice: the next rung is on show, not answered', async ({ page }) => {
   await importScript(page);
   await page.getByRole('button', { name: 'Start sprint' }).click();
   await page.getByRole('button', { name: 'Teach me' }).click();
   await expect(page.getByText('We are the ones who stayed.', { exact: false })).toBeVisible();
   await doubleTap(page, page.getByRole('button', { name: 'Next', exact: true }));
-  await expect(page.getByRole('button', { name: 'Teach me' })).toBeVisible();
-  expect(await step(page)).toBe('test');
+  await expect(page.getByRole('button', { name: 'Reveal' })).toBeVisible();
+  expect(await step(page)).toBe('gaps');
 });
 
 test('Reveal tapped twice: Done still waits for its own tap', async ({ page }) => {
@@ -56,7 +56,7 @@ test('the slip button tapped twice: only that answer is counted right, the miss 
   // On to the next line tried from the cue alone (reading any line shown on the way), then typed.
   const answer = async (typed) => {
     for (let c = await card(page); c.step !== 'floor'; c = await card(page)) {
-      if (c.step === 'help') {
+      if (c.step === 'help' || c.step === 'gaps') {
         await page.getByRole('button', { name: 'Reveal' }).click();
         await page.getByRole('button', { name: 'Done' }).click();
         await page.getByRole('button', { name: 'Next', exact: true }).click();
@@ -77,7 +77,7 @@ test('the slip button tapped twice: only that answer is counted right, the miss 
   await expect(slip).toBeVisible();
   await doubleTap(page, slip, 30);
   await expect(page.locator('.result.perfect')).toHaveText(/Counted right: a slip of the finger/);
-  const events = await page.evaluate(() => window.offScript.events.map((e) => ({ pass: e.pass, slip: !!e.slip, active: typeof e.active })));
+  const events = await page.evaluate(() => window.offScript.events.filter((e) => !e.help).map((e) => ({ pass: e.pass, slip: !!e.slip, active: typeof e.active })));
   expect(events).toEqual([
     { pass: false, slip: false, active: 'number' },
     { pass: true, slip: true, active: 'number' },

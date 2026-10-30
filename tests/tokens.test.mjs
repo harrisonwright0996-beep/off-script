@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { keyOf, tokenize, keyedCount, firstLettersLine, joinTokens, phraseStarts, lettersShown, blankOf } from '../src/tokens.js';
+import { keyOf, tokenize, keyedCount, firstLettersLine, joinTokens, phraseStarts, lettersShown, blankOf, gapsOf } from '../src/tokens.js';
 
 const keys = (s) => tokenize(s).filter((t) => t.k !== null).map((t) => t.k).join('');
 
@@ -81,4 +81,17 @@ test('a blank keeps the word’s punctuation, as the first letters do', () => {
   assert.equal(blankOf(t[0]), '[Aside.]', 'a direction is shown as it is');
   const shown = lettersShown(tokenize('Tickets cost £35, and that’s the price.'), 'phrases');
   assert.equal(joinTokens(tokenize('Tickets cost £35, and that’s the price.'), (x, i) => (shown.has(i) ? firstLettersLine([x]) : blankOf(x))), 'T _ £_, a _ _ _.');
+});
+
+test('words taken out: the longest of every three after the first word; the next longest each time the card comes round', () => {
+  const t = tokenize('She never said that it was over, not to me.');
+  const words = (set) => [...set].map((i) => t[i].d);
+  assert.deepEqual(words(gapsOf(t)), ['never', 'over,', 'not']);
+  assert.deepEqual(words(gapsOf(t, 1)), ['said', 'was', 'to'], 'other words the next time');
+  assert.deepEqual(words(gapsOf(t, 2)), ['that', 'it', 'me.']);
+  assert.deepEqual(words(gapsOf(t, 3)), words(gapsOf(t)), 'then round again');
+  assert.equal(gapsOf(tokenize('One two three')).size, 0, 'too short to take a word out');
+  assert.deepEqual([...gapsOf(tokenize('One big word here'))], [2], 'one word from a short line, never the first');
+  assert.ok(![...gapsOf(tokenize('Long (pausing) words stay intact'))].some((i) => tokenize('Long (pausing) words stay intact')[i].k === null), 'never a direction');
+  assert.equal(gapsOf(tokenize('Word '.repeat(46))).size, 15, 'about a third of a long line');
 });

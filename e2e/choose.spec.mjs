@@ -39,10 +39,10 @@ test('choose what to practise: a scene, every line, read it first; stopped part 
   await carryOn(page);
   expect(await cardId(page)).toBe(at);
 
-  // The day's sprint is its own: it starts where it would have.
+  // The day's sprint is its own: the line that practice started has its go first, as any line under way does.
   await page.getByRole('button', { name: 'Stop' }).click();
   await page.getByRole('button', { name: 'Start sprint' }).click();
-  await expect(page.getByRole('heading', { name: 'New', exact: true })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Learning', exact: true })).toBeVisible();
 });
 
 test('a chosen practice at time up: Sprint done says what is left, and Carry on goes on with it', async ({ page }) => {

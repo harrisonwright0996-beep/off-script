@@ -16,7 +16,7 @@ const WHICH = [
 ];
 const RUN_WHICH = WHICH.filter(([v]) => v !== 'learning');
 const HELP = [
-  ['auto', 'Let Off Script choose', 'The first letters first while a line is new, after a miss, or when your forgetting curve says you may need them.'],
+  ['auto', 'Let Off Script choose', 'A line not yet known is taught step by step. After that, the first letters first while it is new, after a miss, or when your forgetting curve says you may need them.'],
   ['cue', 'From the cue first', 'Every line from its cue alone first; a miss comes back with the first letters, then without.'],
   ['none', 'No help', 'Every line from the cue alone, misses too.'],
   ['letters', 'First letters first', 'Every line with the first letters, then later without.'],

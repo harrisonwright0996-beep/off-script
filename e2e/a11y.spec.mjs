@@ -46,8 +46,16 @@ for (const theme of ['cream', 'light', 'dark']) {
     await check(page, 'card: result', found);
     await page.getByRole('button', { name: 'Next', exact: true }).click(); // a missed try is taught: read it
     await check(page, 'card: front', found);
-    await page.getByRole('button', { name: 'Next', exact: true }).click(); // then on through the beat
-    await expect(page.getByText('The second time these lines come in the scene.')).toBeVisible();
+    await page.getByRole('button', { name: 'Next', exact: true }).click(); // then up the ladder
+    await expect(page.locator('.line .blank').first()).toBeVisible();
+    await check(page, 'card: gaps', found);
+    await page.getByRole('button', { name: 'Reveal' }).click();
+    await check(page, 'card: gaps revealed', found);
+    await page.getByRole('button', { name: 'Done' }).click();
+    await page.getByRole('button', { name: 'Next', exact: true }).click();
+    const nextLine = page.getByText('The second time these lines come in the scene.');
+    for (let i = 0; i < 6 && !(await nextLine.count()); i++) await answerCard(page);
+    await expect(nextLine).toBeVisible();
     await check(page, 'card: a longer cue', found);
     await page.getByRole('button', { name: 'Try it' }).click();
     await page.getByRole('button', { name: 'Say it instead' }).click();
@@ -57,9 +65,9 @@ for (const theme of ['cream', 'light', 'dark']) {
     await check(page, 'card: say', found);
     await page.getByRole('button', { name: 'Done' }).click();
     await page.getByRole('button', { name: 'Next', exact: true }).click();
-    // The rest of the beat is read, then each line comes back with the first letters.
-    const letters = page.getByText('Say it aloud from the first letters, then reveal it.');
-    for (let i = 0; i < 12 && !(await letters.count()); i++) await answerCard(page);
+    // Up the ladder, then a line comes back with the first letters.
+    const back = () => page.evaluate(() => window.offScript.card.queue === 'beat' && window.offScript.card.step === 'help');
+    for (let i = 0; i < 30 && !(await back()); i++) await answerCard(page);
     await check(page, 'card: first letters', found);
     await page.getByRole('button', { name: 'Reveal' }).click();
     await check(page, 'card: first letters revealed', found);

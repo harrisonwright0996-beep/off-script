@@ -135,3 +135,17 @@ export function lettersShown(tokens, level, missedBefore = []) {
   if (level === 'missed') return new Set([tokens.findIndex((t) => t.k !== null), ...missedBefore].filter(keyed));
   return new Set(tokens.map((t, i) => i).filter(keyed));
 }
+
+// The words a gaps card takes out: the longest of every three after the first word, which stays as a
+// way in. A short word gives itself away; a long one has to be found. turn: how many times the card
+// has come round for this line already, each time the next longest of the three. Token indices.
+export function gapsOf(tokens, turn = 0) {
+  const words = tokens.map((t, i) => i).filter((i) => tokens[i].k !== null).slice(1);
+  const size = (i) => tokens[i].d.replace(/[^\p{L}\p{N}]/gu, '').length;
+  const gaps = new Set();
+  for (let n = 0; n + 3 <= words.length; n += 3) {
+    const three = words.slice(n, n + 3).sort((a, b) => size(b) - size(a) || a - b);
+    gaps.add(three[turn % 3]);
+  }
+  return gaps;
+}
