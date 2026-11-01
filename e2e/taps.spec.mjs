@@ -105,3 +105,28 @@ test('End walk tapped twice: the walk is still there to save, and saving twice s
   await expect(page.getByRole('heading', { name: 'Walk saved' })).toBeVisible();
   expect(await page.evaluate(() => window.offScript.events.filter((e) => e.mode === 'walk').length)).toBe(4);
 });
+
+// Puts the button that asks a question where the question's own button will come up, so that the
+// second tap of a double tap lands on it.
+async function underFinger(page, opener, keep) {
+  await opener.click();
+  const spot = await opener.boundingBox();
+  await keep.click();
+  await opener.scrollIntoViewIfNeeded();
+  const at = await opener.boundingBox();
+  await page.evaluate((by) => window.scrollBy(0, by), at.y + at.height / 2 - (spot.y + spot.height / 2));
+}
+
+for (const [name, keep] of [['Start again from 0%', 'Keep my progress'], ['Remove everything', 'Keep everything']]) {
+  test(`${name} tapped twice at the foot of the screen: the question stays, and nothing is lost`, async ({ page }) => {
+    await importScript(page);
+    await page.getByRole('button', { name: 'Start sprint' }).click();
+    for (let i = 0; i < 3; i++) await answerCard(page);
+    await page.evaluate(() => window.offScript.go('settings'));
+    const opener = page.getByRole('button', { name, exact: true });
+    await underFinger(page, opener, page.getByRole('button', { name: keep }));
+    await doubleTap(page, opener);
+    await expect(page.getByRole('heading', { name: `${name}?` })).toBeVisible();
+    expect(await page.evaluate(() => window.offScript.states.size)).toBeGreaterThan(0);
+  });
+}

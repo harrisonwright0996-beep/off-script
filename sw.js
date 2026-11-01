@@ -1,7 +1,12 @@
 // Offline: every app file is cached under one version name and served from the cache first.
-// A new version waits until Off Script asks for it (Update now on Today), so nothing reloads in the
-// middle of a sprint. Change VERSION with every release.
-const VERSION = 'off-script-2026-11-01-17';
+// A new version takes over as soon as it is here. That does not disturb a sprint or a walk: an open
+// page keeps what it has loaded, and starts again by itself at the next Today (app.js, today.js).
+// Change VERSION with every release.
+const VERSION = 'off-script-2026-11-01-18';
+// Versions up to this one have Update now on Today, and start again from that tap, so a new version
+// waits for it: nothing else is sure not to cut off a walk.
+const LAST_MANUAL = 17;
+const isManual = (key) => Number(/^off-script-\d{4}-\d{2}-\d{2}-(\d+)$/.exec(key)?.[1] ?? Infinity) <= LAST_MANUAL;
 const FILES = [
   './',
   'index.html',
@@ -14,6 +19,7 @@ const FILES = [
   'src/app.js',
   'src/audiopack.js',
   'src/backup.js',
+  'src/boot.js',
   'src/dates.js',
   'src/docx.js',
   'src/grade.js',
@@ -46,7 +52,12 @@ const FILES = [
 ];
 
 self.addEventListener('install', (event) => {
-  event.waitUntil(caches.open(VERSION).then((cache) => cache.addAll(FILES)));
+  event.waitUntil(
+    (async () => {
+      await (await caches.open(VERSION)).addAll(FILES);
+      if (!(await caches.keys()).some(isManual)) await self.skipWaiting();
+    })(),
+  );
 });
 
 self.addEventListener('activate', (event) => {

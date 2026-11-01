@@ -1,6 +1,6 @@
 // Start again from 0%: every line, or one scene's, back to not started, to relearn from the beginning.
 // Asked first, with a backup offered. The script, the audio pack and the settings stay.
-import { h, screen, button, announce } from './dom.js';
+import { h, screen, button, announce, settled } from './dom.js';
 import { saveBackup } from './settings.js';
 
 // scene: a scene's index, or null for the whole play.
@@ -26,7 +26,7 @@ export function showStartAgain(ctx, { scene = null } = {}) {
       footer: [
         button(one ? 'Keep its progress' : 'Keep my progress', back, { class: 'btn primary' }),
         button('Back up first', () => saveBackup(ctx)),
-        button(name, startAgain),
+        button(name, settled(startAgain)),
       ],
     }),
   );

@@ -100,7 +100,8 @@ export async function showSprint(ctx, { scope = 'all', minutes = null, custom = 
   const chosen = practice ? session.state.custom : null; // the chosen practice under way
   const startStats = { ...session.stats };
   const undo = [];
-  let elapsed = usable ? saved.elapsed || 0 : 0;
+  // Just 2 minutes is a fresh go at the clock, even when it carries on a sprint that was stopped.
+  let elapsed = usable && !short ? saved.elapsed || 0 : 0;
   let last = Date.now();
   let mode = ctx.settings.mode;
   let removeKeys = null;

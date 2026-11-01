@@ -380,3 +380,20 @@ test('after off script day: Today says so, and a sprint takes a miss first, then
   }
   expect(goes).toEqual(['help', 'floor', 'help']); // the first letters for the miss and the line below 80%
 });
+
+test('Just 2 minutes after a sprint stopped part way has its own time, with nothing due', async ({ page }) => {
+  await importScript(page);
+  await page.getByRole('button', { name: 'Start sprint' }).click();
+  for (let i = 0; i < 3; i++) await answerCard(page);
+  await page.evaluate(async () => {
+    const o = window.offScript;
+    const s = await o.store.get('sprint');
+    await o.store.set('sprint', { ...s, elapsed: 5 * 60000 });
+    await o.go('today');
+  });
+  await page.getByRole('button', { name: 'Just 2 minutes' }).click();
+  await expect(page.getByRole('heading', { name: 'Today', exact: true })).toHaveCount(0);
+  await expect(page.locator('h1')).toHaveCount(1);
+  for (let i = 0; i < 4; i++) await answerCard(page);
+  await expect(page.getByRole('heading', { name: 'Keep going?' })).toHaveCount(0);
+});

@@ -1,6 +1,6 @@
 // Settings: how it looks, how practice works, the voice, the dates, and the script, audio pack and
 // progress files. Every change is saved at once.
-import { h, clear, screen, button, announce, focusHeading, num, plural } from './dom.js';
+import { h, clear, screen, button, announce, focusHeading, num, plural, settled } from './dom.js';
 import { pickFile } from './setup.js';
 import { readAudioPack, packFit } from '../audiopack.js';
 import { makeBackup, readBackup } from '../backup.js';
@@ -204,7 +204,7 @@ export function showSettings(ctx) {
       ],
       [
         button('Keep everything', () => ctx.go('settings'), { class: 'btn primary' }),
-        button('Remove everything', async () => {
+        button('Remove everything', settled(async () => {
           await ctx.store.removeEverything();
           try {
             localStorage.clear();
@@ -212,7 +212,7 @@ export function showSettings(ctx) {
             // nothing stored there
           }
           location.reload();
-        }),
+        })),
       ],
     );
   }
@@ -277,8 +277,8 @@ export function showSettings(ctx) {
             { class: 'stack' },
             button('Back up progress', () => saveBackup(ctx)),
             button('Restore a backup', restore),
-            ctx.states.size ? button('Start again from 0%', () => ctx.go('again')) : null,
-            button('Remove everything', removeAll),
+            ctx.states.size ? button('Start again from 0%', settled(() => ctx.go('again'))) : null,
+            button('Remove everything', settled(removeAll)),
           ),
         ),
         h('p', { class: 'help' }, 'Off Script keeps everything on this phone. Nothing is sent anywhere.'),

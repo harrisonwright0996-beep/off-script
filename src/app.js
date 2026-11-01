@@ -19,6 +19,9 @@ import { showStartAgain } from './ui/again.js';
 
 const SCREENS = { install: showInstall, setup: showSetup, today: showToday, sprint: showSprint, scenes: showScenes, reader: showReader, settings: showSettings, walk: showWalk, choose: showChoose, again: showStartAgain };
 const EVENT_DAYS = 9; // the plan looks back this far
+// A new version restarts the app on these, as it does on Today. Everywhere else something may be under
+// way: a sprint, a walk, a scene read aloud, or typing.
+const AT_REST = new Set(['scenes', 'choose']);
 
 export function applyLook(s) {
   const root = document.documentElement;
@@ -42,7 +45,7 @@ async function boot() {
     events: [],
     eventsFrom: null,
     manifest: (await store.get('manifest')) || null,
-    update: null, // a waiting service worker, when a new version is ready
+    update: false, // a new version has taken over: it shows at the next Today
     cleanup: null,
     fit: { k: 1, n: 0 }, // his forgetting curve factor, refitted when a sprint or walk starts
 
@@ -102,6 +105,8 @@ async function boot() {
     },
 
     async go(name, params = {}) {
+      if (ctx.update && AT_REST.has(name)) return location.reload();
+      ctx.screen = name;
       if (ctx.cleanup) ctx.cleanup();
       ctx.cleanup = null;
       if (ctx.model && name !== 'install' && name !== 'setup') await ctx.refreshEvents();
@@ -110,12 +115,6 @@ async function boot() {
       if (typeof result === 'function') ctx.cleanup = result;
       window.scrollTo(0, 0);
       focusHeading(ctx.root);
-    },
-
-    applyUpdate() {
-      if (!ctx.update) return;
-      navigator.serviceWorker.addEventListener('controllerchange', () => location.reload());
-      ctx.update.postMessage('skip-waiting');
     },
   };
   window.offScript = ctx; // handy when testing; holds nothing that leaves the phone
@@ -135,20 +134,19 @@ async function boot() {
 
 function registerServiceWorker(ctx) {
   if (!('serviceWorker' in navigator) || location.protocol === 'file:') return;
+  // The first to take charge of a page is not an update, only what comes after it.
+  let charged = !!navigator.serviceWorker.controller;
+  navigator.serviceWorker.addEventListener('controllerchange', () => {
+    if (charged) {
+      ctx.update = true;
+      if (AT_REST.has(ctx.screen)) return location.reload();
+      document.dispatchEvent(new CustomEvent('offscript:update'));
+    }
+    charged = true;
+  });
   navigator.serviceWorker
     .register('./sw.js')
     .then((reg) => {
-      const check = () => {
-        if (reg.waiting && navigator.serviceWorker.controller) {
-          ctx.update = reg.waiting;
-          document.dispatchEvent(new CustomEvent('offscript:update'));
-        }
-      };
-      check();
-      reg.addEventListener('updatefound', () => {
-        const w = reg.installing;
-        if (w) w.addEventListener('statechange', () => w.state === 'installed' && check());
-      });
       document.addEventListener('visibilitychange', () => {
         if (document.visibilityState === 'visible') reg.update().catch(() => {});
       });

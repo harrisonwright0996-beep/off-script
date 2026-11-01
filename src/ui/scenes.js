@@ -1,6 +1,6 @@
 // Scenes: the play scene by scene, and a reader for each: speech numbers, speakers in bold,
 // directions in square brackets (never italics), on screen text marked as such.
-import { h, screen, button, announce, num, plural } from './dom.js';
+import { h, screen, button, announce, num, plural, settled } from './dom.js';
 import { progressOf } from '../plan.js';
 import { bracketParens } from '../items.js';
 import { canSpeak, speak, stopSpeaking } from '../tts.js';
@@ -113,7 +113,7 @@ export function showReader(ctx, { scene: index }) {
               'div',
               { class: 'stack' },
               h('p', { class: 'help' }, 'Its lines go back to not started, to learn them again from the beginning.'),
-              button('Start this scene again', () => ctx.go('again', { scene: index })),
+              button('Start this scene again', settled(() => ctx.go('again', { scene: index }))),
             )
           : null,
       ],
