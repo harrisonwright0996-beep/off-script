@@ -190,7 +190,7 @@ export function buildWalk({ model, index, manifest, getState, settings, plan, st
     const mark = { steps: steps.length, trials: trials.length, parts: parts.length, teaching: teaching.length, guide: guide.length, heard: heard.length, t, lastLabel, told: { ...told }, sim: new Map(sim) };
     part(`New: ${heading(beat.scene)}`);
     let prev = null;
-    for (const id of ids.filter((x) => needsTeaching(stateOf(x)))) {
+    for (const id of ids.filter((x) => needsTeaching(stateOf(x)) && !(settings.typedOnly && stateOf(x).walks))) {
       const it = byId.get(id);
       const begin = t;
       prompt('listen');
@@ -232,7 +232,10 @@ export function buildWalk({ model, index, manifest, getState, settings, plan, st
   };
 
   says('intro');
+  // When walks prove nothing a beat walked stays new, so each walk starts from the beats walked least.
+  const walkedLeast = (id) => Math.min(...beatById.get(id).itemIds.map((x) => getState(x).walks || 0));
   const beats = [...plan.newBeats, ...plan.ahead].filter((id) => beatById.has(id));
+  if (settings.typedOnly) beats.sort((a, b) => walkedLeast(a) - walkedLeast(b));
   const taught = new Set();
   const extraDone = new Set(); // an extra run of each scene at most once a tape
   let tests = 0;
@@ -359,7 +362,9 @@ export function walkResults(tape, rows, marked) {
 // whole walk counts as practice. Rounded on the running total, so that however long the walk, they
 // add up to the tape time. A walk kept from days ago changes nothing on a line answered since: what
 // came later is the truer picture. Nor does a walk saved twice, if the first save was cut off.
-export function walkRecords(results, { start, getState, k = 1 }) {
+// typedOnly: walks prove nothing, as nobody hears whether the line was said, so a pass only records
+// that the line was walked, and a mark still counts.
+export function walkRecords(results, { start, getState, k = 1, typedOnly = false }) {
   const states = new Map();
   let prevAt = 0;
   const tenths = (x) => Math.round(x * 10) / 10;
@@ -367,8 +372,9 @@ export function walkRecords(results, { start, getState, k = 1 }) {
     const time = start + r.at * 1000;
     const day = dayKey(new Date(time));
     const prev = states.get(r.id) || getState(r.id);
-    if (prev.lastTime != null && prev.lastTime >= time) return [];
-    const state = applyResult(prev, { pass: r.pass, day, time, mode: 'walk', k });
+    if (Math.max(prev.lastTime ?? -Infinity, prev.walkTime ?? -Infinity) >= time) return [];
+    const walked = () => ({ ...prev, status: prev.status === 'new' ? 'learning' : prev.status, firstDay: prev.firstDay ?? day, walks: (prev.walks || 0) + 1, walkTime: time });
+    const state = r.pass && typedOnly ? walked() : applyResult(prev, { pass: r.pass, day, time, mode: 'walk', k, closeWord: prev.closeWord });
     states.set(r.id, state);
     const event = { time, day, id: r.id, pass: r.pass, mode: 'walk', queue: r.queue, misses: r.pass ? 0 : 1, speakerWrong: false, relearn: false, prev };
     if (r.tapeAt != null) {

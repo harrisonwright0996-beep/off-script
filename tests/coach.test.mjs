@@ -269,3 +269,66 @@ test('with no pack the phone reads the directions too', () => {
   assert.ok(ref);
   assert.equal(clipTexts(m, model).get(ref.file), spokenNote(it.cue.notes[0]));
 });
+
+const walkedLine = (app) => {
+  const it = app.model.items[0];
+  return { it, result: (pass, at = 10) => ({ id: it.id, pass, at, queue: 'beat' }) };
+};
+
+test('walks proving nothing: a pass records the walk and leaves the line as it was', () => {
+  const app = fakeApp();
+  const { it, result } = walkedLine(app);
+  learn(app, [it.id], { stability: 24, hoursAgo: 30 });
+  const before = app.getState(it.id);
+  const [rec] = walkRecords([result(true)], { start: app.clock, getState: app.getState, k: 1, typedOnly: true });
+  assert.equal(rec.state.stability, before.stability);
+  assert.equal(rec.state.passes, before.passes);
+  assert.equal(rec.state.lastTime, before.lastTime);
+  assert.equal(rec.state.walks, 1);
+  assert.equal(rec.event.pass, true);
+  assert.equal(rec.event.mode, 'walk');
+});
+
+test('walks proving nothing: a new line is started, not learned, and a mark still counts', () => {
+  const app = fakeApp();
+  const { it, result } = walkedLine(app);
+  const [fresh] = walkRecords([result(true)], { start: app.clock, getState: app.getState, k: 1, typedOnly: true });
+  assert.equal(fresh.state.status, 'learning');
+  assert.equal(fresh.state.passes, 0);
+  assert.equal(fresh.state.stability, null);
+  learn(app, [it.id], { stability: 24, hoursAgo: 30 });
+  const [missed] = walkRecords([result(false)], { start: app.clock, getState: app.getState, k: 1, typedOnly: true });
+  assert.equal(missed.state.lastResult, 'miss');
+  assert.ok(missed.state.stability < 24);
+});
+
+test('walks proving nothing: a walk saved twice counts once', () => {
+  const app = fakeApp();
+  const { it, result } = walkedLine(app);
+  learn(app, [it.id], { stability: 24, hoursAgo: 30 });
+  const [rec] = walkRecords([result(true)], { start: app.clock, getState: app.getState, k: 1, typedOnly: true });
+  app.states.set(it.id, rec.state);
+  assert.deepEqual(walkRecords([result(true)], { start: app.clock, getState: app.getState, k: 1, typedOnly: true }), []);
+});
+
+test('walks proving nothing: a line walked is not taught again, and the next walk starts from the beats walked least', () => {
+  const app = fakeApp({ settings: { typedOnly: true } });
+  const first = walk(app, manifestOf(app.model), 300);
+  assert.ok(first.heard.length);
+  const results = first.trials.map((tr, i) => ({ id: tr.id, pass: true, at: tr.start + i, queue: tr.queue }));
+  for (const rec of walkRecords(results, { start: app.clock, getState: app.getState, k: 1, typedOnly: true })) app.save(rec);
+  const again = walk(app, manifestOf(app.model), 300);
+  const was = new Set(first.heard.map((x) => x.id));
+  assert.ok(again.heard.length);
+  assert.ok(again.heard.every((x) => !was.has(x.id)), 'new lines this time');
+});
+
+test('walks count as they always have unless he turns that off', () => {
+  const app = fakeApp();
+  const { it, result } = walkedLine(app);
+  assert.equal(app.settings.typedOnly, false);
+  learn(app, [it.id], { stability: 24, hoursAgo: 30 });
+  const [rec] = walkRecords([result(true)], { start: app.clock, getState: app.getState, k: 1 });
+  assert.ok(rec.state.stability > 24);
+  assert.equal(rec.state.walks, undefined);
+});

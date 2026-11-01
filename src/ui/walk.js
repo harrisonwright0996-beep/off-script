@@ -440,7 +440,7 @@ export function showWalk(ctx) {
             last = Math.max(last, times.heard.has(r.trial) ? (times.heard.get(r.trial) - start) / 1000 : Math.min(r.at, (Date.now() - start) / 1000));
             return { ...r, at: last };
           });
-          const records = walkRecords(results, { start, getState: ctx.getState, k: plan.k });
+          const records = walkRecords(results, { start, getState: ctx.getState, k: plan.k, typedOnly: ctx.settings.typedOnly });
           for (const rec of records) await ctx.saveAnswer(rec);
           if (records.reduce((n, r) => n + (r.event.active || 0), 0) >= WALK_COUNTS) ctx.streak.walks += 1;
           await kept;

@@ -315,3 +315,39 @@ test('a pack that an older version imported has no direction clips: the walk pla
   expect(await page.evaluate(() => window.offScript.walk.tape.steps.filter((s) => s.clip && s.clip.startsWith('n-')).length)).toBe(0);
   expect(await page.evaluate(() => window.offScript.walk.tape.steps.filter((s) => s.clip && s.clip.startsWith('coach-')).length)).toBeGreaterThan(0);
 });
+
+test('walks prove nothing, when he turns that on: lines heard right change nothing, and a line marked still counts', async ({ page }) => {
+  await importScript(page);
+  await importPack(page);
+  await page.getByRole('button', { name: 'Settings' }).click();
+  await expect(page.getByLabel('Walks prove nothing: only typed checks count')).not.toBeChecked();
+  await page.getByLabel('Walks prove nothing: only typed checks count').check();
+  await page.getByRole('button', { name: 'Back', exact: true }).click();
+  await page.getByRole('button', { name: 'Walk' }).click();
+  await page.getByRole('button', { name: '15 minutes' }).click();
+  await page.waitForFunction(() => window.offScript.walk && window.offScript.walk.player.audio.readyState >= 3, null, { timeout: 15000 });
+  await page.getByRole('button', { name: 'Play' }).click();
+  await expect(page.getByRole('button', { name: 'Pause' })).toBeVisible();
+  const t = await page.evaluate(() => {
+    const { tape, player } = window.offScript.walk;
+    const at = tape.trials[3].answerEnd + 0.5;
+    player.seek(at);
+    return at;
+  });
+  await page.waitForFunction((at) => Math.abs(window.offScript.walk.player.time - at) < 0.5, t);
+  await page.getByRole('button', { name: 'Missed that one' }).click();
+  await page.getByRole('button', { name: 'End walk' }).click();
+  await page.getByRole('button', { name: 'All good apart from the ticked ones' }).click();
+  await expect(page.getByRole('heading', { name: 'Walk saved' })).toBeVisible();
+  const states = await page.evaluate(() => {
+    const o = window.offScript;
+    return o.events.filter((e) => e.mode === 'walk').map((e) => ({ pass: e.pass, state: o.getState(e.id) }));
+  });
+  for (const { pass, state } of states.filter((x) => x.pass)) {
+    expect(state.passes).toBe(0);
+    expect(state.stability).toBeNull();
+    expect(state.walks).toBeGreaterThan(0);
+  }
+  expect(states.filter((x) => !x.pass).length).toBe(1);
+  expect(states.find((x) => !x.pass).state.lastResult).toBe('miss');
+});
