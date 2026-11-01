@@ -207,6 +207,37 @@ test('time up: the lines still to finish come first, then Sprint done and a brea
   await expect(page.getByRole('heading', { name: 'Keep going?' })).toBeVisible();
 });
 
+test('time up in the middle of a scene: a sprint runs on to the end of it, with nothing said; Just 2 minutes stops when it said it would', async ({ page }) => {
+  await importScript(page);
+  const ids = await page.evaluate(() => {
+    const o = window.offScript;
+    Object.assign(o.settings, { sprintMinutes: 0.02, lastNewDay: '2026-10-27', deadline: '2026-10-30' }); // the final days, a one second sprint
+    const day = o.today();
+    for (const id of [...o.model.scenes[0].itemIds, ...o.model.scenes[1].itemIds]) {
+      o.states.set(id, { id, status: 'review', firstDay: day, learnedDay: day, passes: 3, misses: 0, helped: 1, lapses: 0, stability: 2, passDays: [day], missDays: [], lastResult: 'pass', lastDay: day, lastTime: Date.now() - 3 * 3600000, lastMode: 'say' });
+    }
+    o.go('today');
+    return o.model.scenes[0].itemIds;
+  });
+  await page.getByRole('button', { name: 'Start sprint' }).click();
+  await expect(page.getByRole('heading', { name: 'Run: Prologue' })).toBeVisible();
+  await page.waitForTimeout(1300);
+  for (const id of ids) {
+    await expect(page.getByRole('heading', { name: 'Run: Prologue' })).toBeVisible();
+    await expect(page.getByText("Time's up", { exact: false })).toHaveCount(0);
+    expect(await page.evaluate(() => window.offScript.card.item.id)).toBe(id);
+    await answerCard(page);
+  }
+  await expect(page.getByRole('heading', { name: 'Sprint done' })).toBeVisible();
+  await expect(page.getByText('4 answers, 4 word perfect.')).toBeVisible();
+  await page.getByRole('button', { name: 'Stop for now' }).click();
+  await page.evaluate(() => window.offScript.go('sprint', { scope: 'tests', minutes: 0.02 }));
+  await expect(page.getByRole('heading', { name: 'Run: Scene 1: The Harbour' })).toBeVisible();
+  await page.waitForTimeout(1300);
+  await answerCard(page); // one line of the scene, and 2 minutes means 2 minutes
+  await expect(page.getByRole('heading', { name: 'Keep going?' })).toBeVisible();
+});
+
 test("when today's plan is done: a head start on tomorrow, said plainly", async ({ page }) => {
   await importScript(page);
   await page.getByRole('button', { name: 'Start sprint' }).click();

@@ -24,6 +24,7 @@
 // On a line of 8 words or more the first letters thin out as it gets stronger: every one, then the
 // start of each phrase, then the first word and the words missed before (lettersOf).
 // At time up nothing new comes: the sprint carries on until every line it has shown is right without help.
+// A scene being run goes on to its end first (inScene): the screen does not call time up in the middle of one.
 // The session never saves anything itself: answer() returns the event and new state for the app to
 // save, and advance() then picks the next card using the app's up to date states and plan.
 import { applyHelp, applyResult, needsTeaching } from './state.js';
@@ -416,6 +417,16 @@ export function createSession({ model, index, getPlan, getState, settings, scope
     get closing() {
       return S.closing;
     },
+    // True while a scene is being run and has lines still to come: a run under way, or a chosen
+    // practice whose next line is in the same scene as the last, even with lines left out in between.
+    get inScene() {
+      const t = S.task;
+      if (t && !t.done && t.kind === 'seq') return true;
+      if (!S.custom) return false;
+      const ids = S.custom.itemIds.filter((id) => byId.has(id));
+      const pos = S.custom.pos || 0;
+      return pos > 0 && pos < ids.length && byId.get(ids[pos - 1]).scene === byId.get(ids[pos]).scene;
+    },
     get state() {
       return S;
     },
@@ -539,8 +550,9 @@ export function createSession({ model, index, getPlan, getState, settings, scope
       return { event, state, snapshot, need: line.need, help, later, back };
     },
 
-    // Time is up: nothing new from here. A run under way stops; what it showed comes back on its own,
-    // and in a chosen practice the lines it had not reached are kept for when he carries on.
+    // Time is up: nothing new from here. A run under way stops (only Just 2 minutes calls this in the
+    // middle of one); what it showed comes back on its own, and in a chosen practice the scenes it had
+    // not reached are kept for when he carries on.
     close() {
       if (S.closing) return;
       S.closing = true;
@@ -551,10 +563,7 @@ export function createSession({ model, index, getPlan, getState, settings, scope
       for (const [id, line] of Object.entries(S.lines)) if (line.last < 0 && id !== showing) delete S.lines[id];
       // Right from the cue alone once in this sprint is enough at time up.
       for (const line of Object.values(S.lines)) if (line.clean) line.need = 'done';
-      if (S.task && S.task.kind === 'seq') {
-        if (S.task.custom) S.custom.pos -= S.task.ids.length - S.task.pos;
-        S.task.done = true;
-      }
+      if (S.task && S.task.kind === 'seq') S.task.done = true;
       if ((S.task && !S.task.done) || Object.keys(S.lines).some(owing)) S.message = CLOSING_MESSAGE;
     },
 

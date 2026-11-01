@@ -458,12 +458,28 @@ test('time up with a line back from its ladder still owed: right from its cue on
   assert.equal(s.advance(), null);
 });
 
-test('time up in a run: the run stops; lines it showed come back on their own, the rest wait', () => {
+test('Just 2 minutes up in a run: the run stops; lines it showed come back on their own, the rest wait', () => {
   const app = fakeApp({ settings: FINAL });
   const ids = app.model.scenes[3].itemIds;
   learn(app, ids, { stability: 1, hoursAgo: 3 });
   const log = play(app, start(app, { scope: 'tests' }), { close: (l) => l.length === 2 });
   assert.deepEqual(log, [`run:help:${ids[0]}`, `run:help:${ids[1]}`, `again:floor:${ids[0]}`, `again:floor:${ids[1]}`]);
+});
+
+test('a scene being run goes on to its end: time up waits until its last line is answered', () => {
+  const app = fakeApp({ settings: FINAL });
+  const ids = app.model.scenes[3].itemIds;
+  learn(app, ids, { stability: 1, hoursAgo: 3 });
+  const s = start(app, { scope: 'tests' });
+  assert.equal(s.inScene, false, 'not started');
+  s.advance();
+  for (const id of ids) {
+    assert.equal(s.card.item.id, id);
+    assert.equal(s.inScene, true, 'under way');
+    answer(app, s, true);
+    if (id !== ids[ids.length - 1]) s.advance();
+  }
+  assert.equal(s.inScene, false, 'its last line is answered');
 });
 
 test('a sprint picked up hours later: lines right earlier come back when the curve says so, with a fresh first go', () => {
@@ -645,20 +661,25 @@ test('a chosen practice saved part way says how many lines it still has to go', 
   assert.equal(linesLeft(start(app).save()), 0, 'not a chosen practice');
 });
 
-test('time up in a chosen practice keeps the lines it had not reached, so it can carry on with them', () => {
+test('time up in a chosen practice comes only between scenes, even with lines left out of a scene, and it can carry on with the next', () => {
   const app = fakeApp();
-  const ids = app.model.scenes[3].itemIds;
-  learn(app, ids, { stability: 48, hoursAgo: 1, ...SECURE });
-  const s = start(app, { custom: { itemIds: ids, help: 'none', title: 'Scene 3, every line' } });
-  s.advance(); // one run over all six
-  answer(app, s, true);
+  const [one, two] = [1, 3].map((n) => app.model.scenes[n].itemIds);
+  learn(app, [...one, ...two], { stability: 48, hoursAgo: 1, ...SECURE });
+  const inOne = one.filter((id) => id !== one[1]); // a line left out: the first scene is two stretches
+  const s = start(app, { custom: { itemIds: [...inOne, ...two], help: 'none', title: 'Two scenes' } });
+  for (const id of inOne) {
+    assert.equal(s.advance().item.id, id);
+    assert.equal(s.inScene, true, 'under way');
+    answer(app, s, true);
+    assert.equal(s.inScene, id !== inOne[inOne.length - 1], 'until the end of the scene');
+  }
   s.close();
-  assert.equal(s.advance(), null, 'the run stops at time up');
+  assert.equal(s.advance(), null, 'time up: the next scene waits');
   s.finish();
-  assert.equal(linesLeft(s.save()), 5);
+  assert.equal(linesLeft(s.save()), two.length);
   const later = start(app, { saved: s.save() });
   const c = later.advance();
-  assert.deepEqual([c.item.id, c.progress.total], [ids[1], 5], 'carrying on: a run of the five not reached');
+  assert.deepEqual([c.item.id, c.progress.total], [two[0], two.length], 'carrying on: a run of the next scene');
 });
 
 test('a cue that leads to more than one line is shown longer on its card', () => {

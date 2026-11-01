@@ -45,7 +45,7 @@ test('choose what to practise: a scene, every line, read it first; stopped part 
   await expect(page.getByRole('heading', { name: 'Learning', exact: true })).toBeVisible();
 });
 
-test('a chosen practice at time up: Sprint done says what is left, and Carry on goes on with it', async ({ page }) => {
+test('a chosen practice at time up: the scene goes on to its end, Sprint done says what is left, and Carry on goes on with the next', async ({ page }) => {
   await importScript(page);
   await page.evaluate(() => (window.offScript.settings.sprintMinutes = 0.02)); // a one second sprint
   const ids = await page.evaluate(() => window.offScript.model.items.map((it) => it.id));
@@ -54,11 +54,15 @@ test('a chosen practice at time up: Sprint done says what is left, and Carry on 
   await page.getByLabel('How much help').selectOption({ label: 'No help' });
   await page.getByRole('button', { name: 'Start' }).click();
   await page.waitForTimeout(1300);
-  expect(await answerCard(page)).toBe('floor'); // from the cue alone; time is up after it
+  for (let i = 0; i < 4; i++) {
+    await expect(page.getByRole('heading', { name: 'Run: Prologue' })).toBeVisible();
+    await expect(page.getByText("Time's up", { exact: false })).toHaveCount(0);
+    expect(await answerCard(page)).toBe('floor'); // all four lines of the Prologue, past time
+  }
   await expect(page.getByRole('heading', { name: 'Sprint done' })).toBeVisible();
-  await expect(page.getByText(`${ids.length - 1} lines of this practice still to go.`)).toBeVisible();
+  await expect(page.getByText(`${ids.length - 4} lines of this practice still to go.`)).toBeVisible();
   await carryOn(page);
-  expect(await cardId(page)).toBe(ids[1]);
+  expect(await cardId(page)).toBe(ids[4]);
 });
 
 test('a chosen practice to the end: Practice done, then Choose again with nothing left over', async ({ page }) => {
@@ -127,6 +131,34 @@ test('Run through: everything learned so far in script order; a miss carries on 
   await page.getByRole('button', { name: 'Choose what to practise' }).click();
   await expect(page.getByLabel('How much help')).toHaveValue('auto'); // Choose what to practise keeps its own
   await expect(page.getByLabel('Which lines').locator('option')).toHaveCount(3);
+});
+
+test('a run of one scene past its time has no time up: Run through and Run this scene end as they always do', async ({ page }) => {
+  await importScript(page);
+  const learned = await learnedToday(page);
+  await page.evaluate(() => (window.offScript.settings.sprintMinutes = 0.02)); // a one second sprint
+  const run = async () => {
+    await page.waitForFunction(() => window.offScript.card);
+    await page.waitForTimeout(1300);
+    for (let i = 0; i < 4; i++) {
+      await expect(page.getByRole('heading', { name: 'Run: Prologue' })).toBeVisible();
+      expect(await answerCard(page)).toBe('floor');
+    }
+  };
+  await page.getByRole('button', { name: 'Run through' }).click();
+  await page.getByLabel('Where').selectOption({ label: 'Prologue' });
+  await page.getByRole('button', { name: 'Start' }).click();
+  await run();
+  await expect(page.getByRole('heading', { name: 'Run through done' })).toBeVisible();
+  await expect(page.getByText('4 answers, 4 word perfect.')).toBeVisible();
+
+  await page.evaluate((ids) => {
+    const o = window.offScript;
+    o.card = null;
+    return o.go('sprint', { custom: { scene: 0, itemIds: ids } });
+  }, learned.slice(0, 4));
+  await run();
+  await expect(page.getByRole('heading', { name: 'Run done' })).toBeVisible();
 });
 
 test('Run through from the cue first: lines learned today are asked from the cue alone; a miss comes back with the first letters, then without', async ({ page }) => {

@@ -1,7 +1,8 @@
 // The sprint: one card at a time from the session (session.js), answered on the keypad (Type) or by
 // tapping the words missed (Say); a card with help on it is always said. Every answer is saved at once,
 // and so is the sprint, so closing the app loses nothing. Time is a slim bar that only moves when he
-// does something; at time up nothing new comes, only the lines still to finish, then Sprint done.
+// does something; at time up nothing new comes, only the lines still to finish, then Sprint done. A
+// scene being run goes on to its end first, except in Just 2 minutes, which keeps its word.
 import { h, clear, screen, button, announce, focusHeading, num, plural, drawn, settled } from './dom.js';
 import { createSession, linesLeft } from '../session.js';
 import { createTypeCheck, sayMisses, makeResult, describeResult, repeatMisses, troubleNote } from '../grade.js';
@@ -159,7 +160,8 @@ export async function showSprint(ctx, { scope = 'all', minutes = null, custom = 
     const left = Math.max(0, length - elapsed);
     const fill = h('div', { class: 'timebar-fill', style: { width: `${(100 * left) / length}%` } });
     const mins = Math.max(1, Math.ceil(left / 60000));
-    return h('div', { class: 'timebar', role: 'img', 'aria-label': `Sprint time: about ${plural(mins, 'minute')} left` }, fill);
+    const label = left ? `Sprint time: about ${plural(mins, 'minute')} left` : 'Sprint time is up';
+    return h('div', { class: 'timebar', role: 'img', 'aria-label': label }, fill);
   }
 
   function where(c) {
@@ -443,12 +445,15 @@ export async function showSprint(ctx, { scope = 'all', minutes = null, custom = 
     showCard(c);
   }
 
-  // Shows the card `pick` gives. Once time is up nothing new comes: the lines the sprint still owes,
-  // then Sprint done.
+  // A run of one scene, or a chosen practice with nothing left of it: it has its own ending.
+  const runOver = () => custom || (chosen && !linesLeft(session.state));
+
+  // Shows the card `pick` gives. Once time is up, at the end of any scene being run, nothing new comes:
+  // the lines the sprint still owes, then Sprint done, or the run's own ending.
   function carryOn(pick) {
-    if (timeUp()) session.close();
+    if (timeUp() && (short || !session.inScene)) session.close();
     const c = pick();
-    if (!c) return session.closing ? timeIsUp() : planDone();
+    if (!c) return session.closing && !runOver() ? timeIsUp() : planDone();
     saveSprint();
     showCard(c);
   }
