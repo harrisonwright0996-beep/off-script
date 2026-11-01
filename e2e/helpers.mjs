@@ -56,10 +56,11 @@ export async function importScript(page, url, { oneButton = false } = {}) {
   await expect(page.getByRole('heading', { name: 'Your dates' })).toBeVisible();
   await page.getByRole('button', { name: 'Looks right' }).click();
   await expect(page.getByRole('heading', { name: 'Today' })).toBeVisible();
-  // Most tests reach for Today's buttons directly: one main button has its own tests.
+  // Most tests reach for Today's buttons directly and count their cards: one main button and the cue
+  // question have their own tests.
   if (!oneButton) {
     await page.evaluate(async () => {
-      await window.offScript.saveSettings({ oneButton: false });
+      await window.offScript.saveSettings({ oneButton: false, cueQuiz: false });
       await window.offScript.go('today');
     });
     await expect(page.getByRole('button', { name: 'Settings' })).toBeVisible();
@@ -89,7 +90,10 @@ export async function answerCard(page, { miss = false } = {}) {
   });
   if (card.step === 'test') await page.getByRole('button', { name: 'Teach me' }).click();
   else if (card.step === 'front') await page.getByRole('button', { name: 'Next', exact: true }).click();
-  else {
+  else if (card.step === 'cue') {
+    await page.locator('.cue-option').nth(await page.evaluate(() => window.offScript.card.right)).click();
+    await page.getByRole('button', { name: 'Next', exact: true }).click();
+  } else {
     const say = async () => {
       await page.getByRole('button', { name: 'Reveal' }).click();
       if (miss) await page.getByRole('group', { name: 'Tap any word you missed or changed' }).getByRole('button').first().click();

@@ -243,6 +243,7 @@ export function showSettings(ctx) {
           check('autoAdvance', 'Move on by itself after a word perfect answer'),
           check('closeLines', 'One word out still passes on a long line already learned'),
           h('p', { class: 'help' }, 'Lines of 8 words or more. It shows the word to watch out for, and the line comes back sooner. Turn this off and every word counts.'),
+          check('cueQuiz', 'Now and then, ask which line comes just before'),
           check('scienceNotes', 'A note on why it works after each sprint'),
           select('sprintMinutes', 'Sprint length', OPTIONS.sprintMinutes),
           select('breakMinutes', 'Break length', OPTIONS.breakMinutes),

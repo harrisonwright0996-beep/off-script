@@ -13,6 +13,7 @@ import { keypad, TYPE_HINT } from './keypad.js';
 import { scienceNote } from '../science.js';
 import { hearCue, stopCue } from './hearcue.js';
 import { rewardCard } from './badges.js';
+import { addSeconds, CUE_MOST } from '../streak.js';
 
 const SAVED = 'sprint';
 export const PRACTICE = 'practice'; // a chosen practice, saved apart from the day's sprint
@@ -70,7 +71,9 @@ export function keepInView(root, el) {
   if (by > 0) window.scrollBy(0, by);
 }
 
-// The cue on a card, with its button to hear it.
+// The cue: who speaks and what they say, or the start of a scene, with a button to hear it. A cue made
+// longer, so that only one line fits, shows the lines before it too, and which time it comes if the
+// exchange repeats.
 export function cueBlock(ctx, item, cue) {
   const say = (l) => (l.speaker === null ? h('p', {}, `Start of ${l.text}`) : h('p', {}, h('strong', {}, l.speaker), ': ', l.text));
   const nth = cue.nth ? h('p', { class: 'note' }, `The ${ORDINALS[cue.nth - 1] || `number ${cue.nth}`} time these lines come in the scene.`) : null;
@@ -198,8 +201,6 @@ export async function showSprint(ctx, { scope = 'all', minutes = null, custom = 
     return h('p', { class: 'where' }, `${heading(it.scene)}, speech ${it.n}${part}${rung}`);
   }
 
-  // The cue: who speaks and what they say, or the start of a scene. A cue made longer, so that only
-  // one line fits, shows the lines before it too, and which time it comes if the exchange repeats.
   const readAloud = (text) =>
     canSpeak() ? button('Read aloud', () => speak(text, { voiceURI: ctx.settings.voiceURI, rate: ctx.settings.rate })) : null;
 
@@ -226,6 +227,7 @@ export async function showSprint(ctx, { scope = 'all', minutes = null, custom = 
         [button('Next', act(() => choose('next')), { class: 'btn primary' }), readAloud(c.item.text)].filter(Boolean),
       );
     } else if (c.step === 'help' || c.step === 'gaps') helpCard(c);
+    else if (c.step === 'cue') cueCard(c);
     else floor(c);
     if (focus) focusHeading(ctx.root);
   }
@@ -382,6 +384,33 @@ export async function showSprint(ctx, { scope = 'all', minutes = null, custom = 
     function sayAnswer() {
       sayCheck(tokens, answerArea, footBox, 'Say it aloud, then reveal it.', (misses, ms) => finish(c, makeResult({ misses, speakerWrong, mode: 'say', ms, words: c.close ? item.words : 0 })));
     }
+  }
+
+  // A cue question: the whole line is on show, and three lines to choose from. Nothing about the line
+  // changes, whichever is chosen. Only the time counts, towards the day's rounds.
+  function cueCard(c) {
+    const shown = () => [h('p', { class: 'speaker' }, c.item.speaker), h('p', { class: 'line' }, tokenView(c.item.tokens))];
+    undo.length = 0; // the answer before is behind this card now
+    const choose = (i) => {
+      tick();
+      const right = i === c.right;
+      const seconds = Math.min(Math.round((elapsed - answeredAt) / 100) / 10, CUE_MOST);
+      answeredAt = elapsed;
+      addSeconds(ctx.streak, ctx.today(), seconds);
+      ctx.saveStreak();
+      const { later } = session.cueAnswer(right);
+      saveSprint();
+      const text = right ? 'Right, that is the cue' : 'Not that one. This is the cue';
+      const note = later ? 'This one comes back later.' : null;
+      announce([`${text}.`, note].filter(Boolean).join(' '));
+      const block = h('p', { class: `result ${right ? 'perfect' : 'misses'}` }, h('span', { class: 'icon', 'aria-hidden': 'true' }, right ? '✓' : '✕'), h('span', {}, text));
+      frame({ ...c, message: null }, [block, cueBlock(ctx, c.item, c.cue), ...shown(), note ? h('p', { class: 'help' }, note) : null], [button('Next', act(next), { class: 'btn primary' })]);
+      ctx.root.querySelector('footer .btn').focus({ preventScroll: true });
+      if (right && ctx.settings.autoAdvance) autoTimer = setTimeout(next, AUTO_ADVANCE_MS);
+    };
+    const options = h('div', { class: 'cue-options', role: 'group', 'aria-labelledby': 'cue-question' });
+    c.choices.forEach((text, i) => options.append(button(text, act(() => choose(i)), { class: 'btn cue-option' })));
+    frame(c, [...shown(), h('p', { class: 'prompt', id: 'cue-question' }, 'Which line comes just before this one?'), options], []);
   }
 
   async function finish(c, result, { slipped = false } = {}) {

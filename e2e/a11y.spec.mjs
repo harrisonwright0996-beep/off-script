@@ -171,6 +171,31 @@ for (const theme of ['cream', 'light', 'dark']) {
   });
 }
 
+for (const theme of ['cream', 'light', 'dark']) {
+  test(`a cue question, in the ${theme} theme`, async ({ page }) => {
+    test.setTimeout(60000);
+    const found = [];
+    await importScript(page);
+    await page.evaluate((t) => {
+      Object.assign(window.offScript.settings, { cueQuiz: true, cueEvery: 1, lastNewDay: window.offScript.today() });
+      return window.offScript.saveSettings({ theme: t });
+    }, theme);
+    await page.evaluate(() => window.offScript.go('sprint'));
+    for (let i = 0; i < 60; i++) {
+      await page.waitForFunction(() => window.offScript.card);
+      if (await page.evaluate(() => window.offScript.card.step === 'cue')) break;
+      await answerCard(page);
+    }
+    await expect(page.locator('.cue-option')).toHaveCount(3);
+    await check(page, 'cue question', found);
+    await page.locator('.cue-option').nth(await page.evaluate(() => (window.offScript.card.right + 1) % 3)).click();
+    await expect(page.locator('.result')).toBeVisible();
+    await check(page, 'cue question answered', found);
+    for (const f of found) console.log(`${theme} | ${f.where} | ${f.impact} | ${f.id}: ${f.help} | ${f.nodes.join(', ')}`);
+    expect(found.filter((f) => f.impact === 'serious' || f.impact === 'critical')).toEqual([]);
+  });
+}
+
 test('a first letters card with blanks, in every theme', async ({ page }) => {
   const found = [];
   await importScript(page);

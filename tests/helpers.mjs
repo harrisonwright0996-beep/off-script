@@ -53,7 +53,7 @@ export function fakeApp({ settings = {}, today = '2026-10-26', hour = 12, step =
     get today() {
       return dayKey(new Date(app.clock));
     },
-    settings: { ...DEFAULT_SETTINGS, ...settings },
+    settings: { ...DEFAULT_SETTINGS, cueQuiz: false, ...settings }, // the cue question has its own tests
     getState: (id) => states.get(id) || newState(id),
     plan: () => buildPlan({ model, index, getState: app.getState, events, settings: app.settings, today: app.today, now: app.clock }),
     save({ event, state }) {

@@ -10,6 +10,7 @@ export const DEFAULT_SETTINGS = {
   autoAdvance: false,
   closeLines: true, // one word out of a long line already learned still passes
   scienceNotes: true, // a note on why it works after a sprint
+  cueQuiz: true, // now and then, which line comes just before this one
   textSize: 100, // percent, 90 to 200
   lineSpacing: 1.5, // 1.5, 1.8 or 2
   letterSpacing: 'normal', // 'normal', 'wide' or 'wider'

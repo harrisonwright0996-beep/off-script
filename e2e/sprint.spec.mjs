@@ -469,3 +469,43 @@ test('a note on why it works after a sprint, a different one each time, and it c
   await sprintOut();
   await expect(page.locator('.science')).toHaveCount(0);
 });
+
+test('now and then a card asks which line comes just before: it costs nothing, and comes back if missed', async ({ page }) => {
+  test.setTimeout(90000);
+  await importScript(page);
+  await page.evaluate(() => Object.assign(window.offScript.settings, { cueQuiz: true, cueEvery: 1, mode: 'type', lastNewDay: window.offScript.today() }));
+  await page.evaluate(() => window.offScript.go('sprint'));
+  const toQuestion = async () => {
+    for (let i = 0; i < 60; i++) {
+      await page.waitForFunction(() => window.offScript.card);
+      if (await page.evaluate(() => window.offScript.card.step === 'cue')) return;
+      await answerCard(page);
+    }
+  };
+  await toQuestion();
+  const c = await page.evaluate(() => {
+    const { card, states } = window.offScript;
+    return { right: card.right, cue: card.item.cue.text, text: card.item.text, state: JSON.stringify(states.get(card.item.id)), id: card.item.id };
+  });
+  await expect(page.getByRole('heading', { name: 'The cue' })).toBeVisible();
+  await expect(page.getByText('Which line comes just before this one?')).toBeVisible();
+  await expect(page.locator('.line')).toContainText(c.text.slice(0, 12));
+  await expect(page.locator('.cue-option')).toHaveCount(3);
+  await expect(page.getByRole('button', { name: 'Undo last answer' })).toHaveCount(0);
+  await page.screenshot({ path: `shots/${test.info().project.name}-cue-question.png` });
+  await page.evaluate(() => (window.offScript.streak.days[window.offScript.today()] = 0));
+  await page.locator('.cue-option').nth((c.right + 1) % 3).click();
+  await expect(page.locator('.result')).toContainText('Not that one');
+  await expect(page.locator('.cue')).toContainText(c.cue);
+  await expect(page.getByText('This one comes back later.')).toBeVisible();
+  const seconds = await page.evaluate(() => window.offScript.streak.days[window.offScript.today()] ?? 0);
+  expect(seconds).toBeLessThanOrEqual(30);
+  expect(await page.evaluate((id) => JSON.stringify(window.offScript.states.get(id)), c.id)).toBe(c.state);
+  await page.getByRole('button', { name: 'Next', exact: true }).click();
+  await toQuestion();
+  expect(await page.evaluate(() => window.offScript.card.item.id)).toBe(c.id);
+  await page.locator('.cue-option').nth(await page.evaluate(() => window.offScript.card.right)).click();
+  await expect(page.locator('.result')).toContainText('Right, that is the cue');
+  await page.screenshot({ path: `shots/${test.info().project.name}-cue-answered.png` });
+  await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+});

@@ -12,6 +12,8 @@ const LINE_MOST = 120; // seconds a card can earn, however long the line
 const LINE_START = 30; // the cue, and thinking
 const LINE_WORD = 2; // and each word of the line
 
+export const CUE_MOST = 30; // seconds a cue question can earn
+
 export const MEDALS = [
   { name: 'Bronze', icon: '🥉', rounds: 2 },
   { name: 'Silver', icon: '🥈', rounds: 3 },

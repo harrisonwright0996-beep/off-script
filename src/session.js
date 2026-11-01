@@ -25,11 +25,15 @@
 // start of each phrase, then the first word and the words missed before (lettersOf).
 // At time up nothing new comes: the sprint carries on until every line it has shown is right without help.
 // A scene being run goes on to its end first (inScene): the screen does not call time up in the middle of one.
+// Every so many answers, between cards, a cue question ('cue'): a line right from its cue earlier in this
+// sprint, and which of three lines comes before it. Never in a chosen practice, in a run, or at time up.
+// It asks a line already right, as it shows the whole line, and it changes nothing about the line; one
+// missed comes back once. It is recognising, not remembering, so it plays no part in the plan.
 // The session never saves anything itself: answer() returns the event and new state for the app to
 // save, and advance() then picks the next card using the app's up to date states and plan.
 import { applyHelp, applyResult, needsTeaching } from './state.js';
 import { SLOW, recallNow } from './memory.js';
-import { cueOf, fnv1a, speakerChoices } from './items.js';
+import { cueChoices, cueOf, fnv1a, speakerChoices } from './items.js';
 import { beatStage, testsOf, typedPerWord } from './plan.js';
 import { dayKey } from './dates.js';
 
@@ -45,6 +49,7 @@ export const LADDER_MESSAGE = 'A new line stays with you for a few goes, with le
 export const GAP = 3; // other answers before a line comes back
 export const POOL = 2; // beats being learned at a time
 export const CHECK_EVERY = 3; // goes on lines coming back, then a check of an older line
+export const CUE_EVERY = 6; // answers, then a cue question
 const SHUFFLE = 3; // how far the order of lines coming back is shaken up, in answers
 // First letters first when the chance of recall now is below this. A line falls due at 90%, so a check
 // on time is from the cue alone: the go that builds memory, and the one the curve learns from.
@@ -104,8 +109,9 @@ export function linesLeft(saved) {
 
 // What one sprint keeps: the beats being learned, the one being read, goes on lines coming back since
 // the last check, the line answered last, every line it has shown, how many goes so far (gaps are
-// counted in these), and whether time is up.
-const sprintState = () => ({ pool: [], teach: null, streak: 0, lastId: null, lines: {}, goes: 0, closing: false, task: null, planDone: false });
+// counted in these), whether time is up, answers since the last cue question, the lines it has asked,
+// and those to ask again.
+const sprintState = () => ({ pool: [], teach: null, streak: 0, lastId: null, lines: {}, goes: 0, closing: false, task: null, planDone: false, cueGap: 0, cueAsked: {}, cueAgain: [] });
 
 // scope: 'all' (new lines and tests) or 'tests' (Just 2 minutes: tests only).
 // custom: { scene, itemIds, help } for "Run this scene" and chosen practice: the lines in order, run
@@ -133,6 +139,9 @@ export function createSession({ model, index, getPlan, getState, settings, scope
         };
   S.pool ||= []; // a sprint saved by Release 12 or before
   S.streak ||= 0;
+  S.cueGap ||= 0; // a sprint saved before cue questions
+  S.cueAsked ||= {};
+  S.cueAgain ||= [];
   let card = null;
   let lastPlan = null;
 
@@ -325,10 +334,30 @@ export function createSession({ model, index, getPlan, getState, settings, scope
     return { kind: 'seq', queue: 'run', scene: byId.get(run[0]).scene, ids: run, pos: 0, custom: true };
   }
 
+  // A cue question, when one is due: a line missed at the last comes first, then any line right from its
+  // cue a few cards ago. A line still owed a go is not shown: that would give it away.
+  function cueTask() {
+    if (!settings.cueQuiz || S.cueGap < (settings.cueEvery ?? CUE_EVERY)) return null;
+    const settled = (id) => byId.has(id) && !!S.lines[id] && S.lines[id].need === 'done' && !!S.lines[id].clean && S.goes - S.lines[id].last >= GAP;
+    const unasked = Object.keys(S.lines).filter((id) => settled(id) && !S.cueAsked[id]);
+    const order = [...S.cueAgain.filter(settled), ...unasked.sort((a, b) => shake(b) - shake(a))];
+    for (const id of order) {
+      const q = cueChoices(model, byId.get(id), S.goes);
+      if (!q) continue;
+      S.cueGap = 0;
+      const again = S.cueAgain.includes(id);
+      S.cueAgain = S.cueAgain.filter((x) => x !== id);
+      return { kind: 'item', cue: true, queue: 'cue', id, again, ...q };
+    }
+    return null;
+  }
+
   function nextTask() {
     const p = (lastPlan = getPlan());
     if (S.custom) return customTask(p);
     if (S.closing) return owedTask(GAP) || finishOwed(p);
+    const asked = cueTask();
+    if (asked) return asked;
     S.pool = S.pool.filter(live);
     if (S.teach && !(live(S.teach) && toTeach(S.teach))) S.teach = null;
     if (!S.teach && S.scope === 'all' && room()) {
@@ -358,6 +387,7 @@ export function createSession({ model, index, getPlan, getState, settings, scope
 
   function cardFor(t) {
     const item = byId.get(currentId(t));
+    if (t.cue) return { key: ++S.seq, step: 'cue', queue: 'cue', item, cue: cueOf(index, item), label: 'The cue', choices: t.options, right: t.right };
     const step = currentStep(t);
     const c = { key: ++S.seq, step, queue: t.queue, item, cue: cueOf(index, item), label: t.again && t.kind === 'item' ? 'Again' : LABELS[t.queue] };
     if (t.kind === 'seq' && t.queue === 'run') c.label = `Run: ${model.scenes[item.scene].heading}`;
@@ -459,6 +489,18 @@ export function createSession({ model, index, getPlan, getState, settings, scope
       return card;
     },
 
+    // For a cue question. Nothing is saved: the line's memory and everything Today counts stay as they
+    // were. Returns whether the question comes back later.
+    cueAnswer(right) {
+      const t = S.task;
+      t.done = true;
+      S.cueAsked[t.id] = true;
+      const later = !right && !t.again;
+      if (later) S.cueAgain.push(t.id);
+      card = null;
+      return { later };
+    },
+
     // For gaps, help and floor cards. result: { pass, misses: [token indices], speakerWrong, mode }.
     // Returns the event and new state to save, the snapshot for undo, what the line needs next,
     // whether it comes back later for it, and whether it went a rung back on the ladder.
@@ -500,6 +542,7 @@ export function createSession({ model, index, getPlan, getState, settings, scope
       if (result.slip) event.slip = true; // a wrong key he says was a slip of the finger
 
       S.goes += 1;
+      S.cueGap += 1;
       line.last = S.goes;
       line.justRead = false;
       if (queue === 'new') line.from = S.readFrom; // tried with its beat: its next go is in any order with theirs
@@ -569,6 +612,7 @@ export function createSession({ model, index, getPlan, getState, settings, scope
       S.closing = true;
       S.teach = null;
       S.againSaid = true;
+      if (S.task && S.task.cue) S.task.done = true;
       // Only lines this sprint has shown are finished: the rest of the beats being learned wait.
       const showing = S.task && !S.task.done ? currentId(S.task) : null;
       for (const [id, line] of Object.entries(S.lines)) if (line.last < 0 && id !== showing) delete S.lines[id];
