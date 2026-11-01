@@ -54,6 +54,19 @@ export function announce(text) {
   }, 50);
 }
 
+// The bar and the footer stay on screen while the page scrolls, unless big text makes them so tall that
+// they would hide it: then they go with the page. The keypad always stays: it is how a line is answered.
+const SHARE = { HEADER: 0.25, FOOTER: 0.4 };
+const fit =
+  typeof ResizeObserver === 'undefined'
+    ? null
+    : new ResizeObserver((entries) => {
+        for (const { target } of entries) {
+          if (!target.isConnected) fit.unobserve(target);
+          else target.classList.toggle('flow', !target.classList.contains('keyboard') && target.offsetHeight > SHARE[target.tagName] * window.innerHeight);
+        }
+      });
+
 // A screen: heading, scrolling body, and a footer of actions in the bottom third.
 export function screen({ title, back, backLabel = 'Back', actions = [], body = [], footer = [], footerClass = '', className = '' }) {
   const head = h(
@@ -63,8 +76,10 @@ export function screen({ title, back, backLabel = 'Back', actions = [], body = [
     h('h1', { tabindex: '-1' }, title),
     h('div', { class: 'bar-actions' }, actions),
   );
+  const foot = footer.length ? h('footer', { class: `foot ${footerClass}` }, footer) : null;
+  if (fit) for (const el of [head, foot]) if (el) fit.observe(el);
   drawn();
-  return h('div', { class: `screen ${className}` }, head, h('main', { class: 'body' }, body), footer.length ? h('footer', { class: `foot ${footerClass}` }, footer) : null);
+  return h('div', { class: `screen ${className}` }, head, h('main', { class: 'body' }, body), foot);
 }
 
 export function focusHeading(root) {

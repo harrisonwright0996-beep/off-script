@@ -203,6 +203,7 @@ h1:focus-visible {
   top: 0;
   z-index: 2;
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 0.5em;
   padding: calc(env(safe-area-inset-top) + 0.5em) calc(env(safe-area-inset-right) + 1em) 0.5em calc(env(safe-area-inset-left) + 1em);
@@ -210,9 +211,9 @@ h1:focus-visible {
   border-bottom: 1px solid var(--border);
 }
 .bar h1 {
-  flex: 1;
-  min-width: 0;
-  overflow-wrap: anywhere;
+  flex: 1 1 0;
+  max-width: 100%;
+  overflow-wrap: break-word; /* whole words: the bar wraps first, and only a word wider than the screen breaks */
 }
 .bar .back {
   margin-left: -0.5em;
@@ -238,12 +239,21 @@ h1:focus-visible {
   background: var(--bg);
   border-top: 1px solid var(--border);
 }
+.bar.flow,
+.foot.flow {
+  position: static;
+}
 .foot .row {
   display: flex;
+  flex-wrap: wrap;
   gap: 0.6em;
 }
 .foot .row > * {
   flex: 1;
+}
+.foot .row > .btn {
+  min-width: min-content; /* a long word at big text moves the button to its own row, not out of its border */
+  max-width: 100%;
 }
 
 /* Buttons: at least 44 by 44 points. */
@@ -568,9 +578,8 @@ h1:focus-visible {
 .keypad {
   display: flex;
   flex-direction: column;
-  gap: 0.4rem;
-  padding: 0.5rem 0.25rem calc(env(safe-area-inset-bottom) + 0.5rem);
-  margin: 0 calc(-1 * env(safe-area-inset-right) - 1em) 0 calc(-1 * env(safe-area-inset-left) - 1em);
+  gap: 5px;
+  padding: 6px calc(env(safe-area-inset-right) + 4px) calc(env(safe-area-inset-bottom) + 6px) calc(env(safe-area-inset-left) + 4px);
   background: var(--raised);
   user-select: none;
   -webkit-user-select: none;
@@ -578,34 +587,51 @@ h1:focus-visible {
 .keys {
   display: flex;
   justify-content: center;
-  gap: 0.3rem;
+  gap: 4px;
 }
 .key {
-  flex: 0 1 2.4rem;
+  flex: 0 1 40px;
   min-width: 0;
-  height: 3rem;
+  height: clamp(30px, 8.5vh, 50px); /* the keypad never grows with the text, or it would fill the screen */
   padding: 0;
   border: 1px solid var(--border);
   border-radius: 0.45rem;
   background: var(--surface);
   color: var(--text);
-  font-size: min(1.2rem, 5.5vw);
+  font-size: min(20px, 5.5vw);
   font-weight: 600;
   touch-action: manipulation;
   cursor: pointer;
 }
 .keys.digits .key {
-  height: 2.4rem;
-  font-size: min(1rem, 4.5vw);
+  height: clamp(26px, 6.5vh, 40px);
+  font-size: min(17px, 4.5vw);
 }
 .key.reveal {
-  flex-basis: 3.4rem;
+  flex-basis: 56px;
   background: var(--bg);
   border-width: 2px;
 }
 .key:active {
   background: var(--accent);
   color: var(--on-accent);
+}
+/* A phone on its side: every line of height is for the cue and the line. */
+@media (max-height: 480px) {
+  .bar {
+    position: static;
+  }
+  .keypad {
+    gap: 3px;
+    padding-top: 3px;
+    padding-bottom: calc(env(safe-area-inset-bottom) + 3px);
+  }
+  .key {
+    height: clamp(26px, 9vh, 40px);
+  }
+  .keys.digits .key {
+    height: clamp(24px, 8vh, 34px);
+  }
 }
 .foot.keyboard {
   padding: 0;
@@ -742,3 +768,11 @@ h1:focus-visible {
 }
 
 .guide { font-size: 1.5em; font-weight: 700; text-align: center; }
+
+.cue-top { display: flex; align-items: center; justify-content: space-between; gap: 0.75em; }
+.cue-top .cue-label { margin: 0; }
+.hear-cue { min-height: 44px; padding-block: 0; }
+.field select {
+  overflow: hidden; /* WebKit lets a long option widen the page, whatever the width of the list */
+  text-overflow: ellipsis;
+}

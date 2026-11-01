@@ -144,3 +144,134 @@ test('start this scene again: its lines go back to not started, other scenes kee
   expect(await kept(page, 1)).toEqual({ states: 0, answers: 0, saved: 0 });
   expect(await kept(page, 0)).toEqual({ ...prologue, saved: 0 }); // the Prologue keeps its progress
 });
+
+const sideways = (page) => page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
+
+// A sprint, on the first card with the keypad.
+async function toKeypad(page) {
+  await importScript(page);
+  await page.getByRole('button', { name: 'Start sprint' }).click();
+  await page.getByRole('button', { name: 'Try it' }).click();
+  await page.getByRole('group', { name: 'Who speaks next?' }).getByRole('button', { name: 'Cast', exact: true }).click();
+  await expect(page.getByRole('group', { name: /Keypad/ })).toBeVisible();
+}
+
+for (const width of [393, 320]) {
+  test(`the keypad at ${width} wide: every key whole, and no sideways scroll`, async ({ page }) => {
+    await page.setViewportSize({ width, height: 700 });
+    await toKeypad(page);
+    const keys = await page.locator('.key').evaluateAll((all) => all.map((k) => ({ key: k.dataset.key, ...k.getBoundingClientRect().toJSON() })));
+    expect(keys.length).toBeGreaterThan(30);
+    for (const k of keys) {
+      expect(k.left, k.key).toBeGreaterThanOrEqual(0);
+      expect(k.right, k.key).toBeLessThanOrEqual(width);
+    }
+    expect(await sideways(page)).toBe(0);
+  });
+}
+
+test('a phone on its side: the keypad leaves room for the line, and the title goes with the page', async ({ page }) => {
+  await page.setViewportSize({ width: 568, height: 320 });
+  await toKeypad(page);
+  const pad = page.getByRole('group', { name: /Keypad/ });
+  expect((await pad.boundingBox()).height).toBeLessThan(200);
+  expect(await sideways(page)).toBe(0);
+  await expect(page.locator('.bar')).toHaveCSS('position', 'static');
+});
+
+test('big text on a small phone: the footer goes with the page, nothing pans, the keypad stays the same size', async ({ page }) => {
+  await page.setViewportSize({ width: 320, height: 568 });
+  await importScript(page);
+  for (const textSize of [175, 200]) {
+    await page.evaluate((textSize) => window.offScript.saveSettings({ textSize }).then(() => window.offScript.go('today')), textSize);
+    await expect.poll(() => page.locator('footer').evaluate((el) => getComputedStyle(el).position === 'static' || el.offsetHeight <= 0.4 * innerHeight)).toBe(true);
+    expect(await sideways(page)).toBe(0);
+    expect(await page.locator('footer .btn').evaluateAll((all) => all.filter((b) => b.scrollWidth > b.clientWidth).map((b) => b.textContent))).toEqual([]);
+    for (const [name, params] of [['reader', { scene: 1 }], ['choose', {}], ['scenes', {}], ['settings', {}]]) {
+      await page.evaluate(([name, params]) => window.offScript.go(name, params), [name, params]);
+      await expect(page.locator('h1')).toBeVisible();
+      expect(await sideways(page), name).toBe(0);
+    }
+  }
+  await page.evaluate(() => window.offScript.saveSettings({ textSize: 100 }).then(() => window.offScript.go('today')));
+  await page.getByRole('button', { name: 'Start sprint' }).click();
+  await page.getByRole('button', { name: 'Try it' }).click();
+  await page.getByRole('group', { name: 'Who speaks next?' }).getByRole('button', { name: 'Cast', exact: true }).click();
+  const pad = page.getByRole('group', { name: /Keypad/ });
+  await expect(pad).toBeVisible();
+  const normal = (await pad.boundingBox()).height;
+  await page.evaluate(() => window.offScript.saveSettings({ textSize: 200 }));
+  await expect(page.locator('footer')).toHaveCSS('position', 'sticky');
+  expect(Math.abs((await pad.boundingBox()).height - normal)).toBeLessThan(8);
+});
+
+test('every card can say its cue aloud, and hearing it does not change the card', async ({ page }) => {
+  await importScript(page);
+  await importPack(page);
+  await page.getByRole('button', { name: 'Start sprint' }).click();
+  await page.waitForFunction(() => window.offScript.card);
+  const id = await page.evaluate(() => {
+    window.played = [];
+    HTMLMediaElement.prototype.play = function play() {
+      window.played.push(this.src);
+      return Promise.resolve();
+    };
+    return window.offScript.card.item.id;
+  });
+  await expect(async () => {
+    await page.getByRole('button', { name: 'Hear the cue' }).click();
+    expect(await page.evaluate(() => window.played.at(-1))).toMatch(/^blob:/); // the pack's own voice
+  }).toPass();
+  expect(await page.evaluate(() => window.offScript.card.item.id)).toBe(id);
+});
+
+test('with no audio pack the phone says the cue', async ({ page }) => {
+  await page.addInitScript(() => {
+    window.said = [];
+    window.SpeechSynthesisUtterance = class {
+      constructor(text) {
+        this.text = text;
+      }
+    };
+    const speak = (u) => {
+      window.said.push(u.text);
+      setTimeout(() => u.onend && u.onend(), 0);
+    };
+    Object.defineProperty(window, 'speechSynthesis', { value: { speak, cancel() {}, pause() {}, resume() {}, getVoices: () => [], addEventListener() {} } });
+  });
+  await importScript(page);
+  await page.getByRole('button', { name: 'Start sprint' }).click();
+  await page.waitForFunction(() => window.offScript.card);
+  const cue = await page.evaluate(() => window.offScript.card.cue.text);
+  await page.getByRole('button', { name: 'Hear the cue' }).click();
+  await expect.poll(() => page.evaluate(() => window.said.at(-1))).toBe(cue);
+});
+
+test('the typing hint sits above the line, where the keypad cannot cover it, and on a long line the newest word stays in view', async ({ page }) => {
+  await page.setViewportSize({ width: 320, height: 500 });
+  await importScript(page);
+  await page.evaluate(() => {
+    const o = window.offScript;
+    const it = o.model.items[0];
+    const words = Array.from({ length: 80 }, (_, i) => `word${i}`);
+    it.tokens = words.flatMap((w, i) => [...(i ? [{ d: ' ', k: null }] : []), { d: w, k: 'a' }]);
+    it.words = 80;
+  });
+  await page.getByRole('button', { name: 'Start sprint' }).click();
+  await page.getByRole('button', { name: 'Try it' }).click();
+  await page.getByRole('group', { name: 'Who speaks next?' }).getByRole('button', { name: 'Cast', exact: true }).click();
+  const hint = page.getByText('Say or mouth each word', { exact: false });
+  await expect(hint).toBeVisible();
+  const order = await page.evaluate(() => {
+    const line = document.querySelector('.line.answer');
+    const help = document.querySelector('.type-hint');
+    return help.compareDocumentPosition(line) & Node.DOCUMENT_POSITION_FOLLOWING;
+  });
+  expect(order).toBeTruthy();
+  await page.keyboard.type('a'.repeat(60));
+  const gap = await page.evaluate(() => {
+    const line = document.querySelector('.line.answer');
+    return document.querySelector('footer').getBoundingClientRect().top - line.lastElementChild.getBoundingClientRect().bottom;
+  });
+  expect(gap).toBeGreaterThanOrEqual(0);
+});

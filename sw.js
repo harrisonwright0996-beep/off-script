@@ -2,7 +2,7 @@
 // A new version takes over as soon as it is here. That does not disturb a sprint or a walk: an open
 // page keeps what it has loaded, and starts again by itself at the next Today (app.js, today.js).
 // Change VERSION with every release.
-const VERSION = 'off-script-2026-11-01-19';
+const VERSION = 'off-script-2026-11-01-20';
 // Versions up to this one have Update now on Today, and start again from that tap, so a new version
 // waits for it: nothing else is sure not to cut off a walk.
 const LAST_MANUAL = 17;
@@ -41,6 +41,7 @@ const FILES = [
   'src/ui/again.js',
   'src/ui/choose.js',
   'src/ui/dom.js',
+  'src/ui/hearcue.js',
   'src/ui/install.js',
   'src/ui/keypad.js',
   'src/ui/scenes.js',
