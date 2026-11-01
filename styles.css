@@ -740,3 +740,5 @@ h1:focus-visible {
   margin-top: 0.1em;
   accent-color: var(--missed);
 }
+
+.guide { font-size: 1.5em; font-weight: 700; text-align: center; }

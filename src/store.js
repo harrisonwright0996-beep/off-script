@@ -99,6 +99,11 @@ export async function openStore(name = DB) {
         tx.objectStore('events').clear();
       } else {
         const gone = new Set(ids);
+        const kv = tx.objectStore('kv');
+        kv.get('walkDraft').onsuccess = (e) => {
+          const draft = e.target.result;
+          if (draft && draft.trials.some((tr) => gone.has(tr.id))) kv.delete('walkDraft');
+        };
         for (const id of gone) tx.objectStore('items').delete(id);
         const cursor = tx.objectStore('events').openCursor();
         cursor.onsuccess = () => {
@@ -108,7 +113,7 @@ export async function openStore(name = DB) {
           c.continue();
         };
       }
-      for (const key of ['sprint', 'practice']) tx.objectStore('kv').delete(key);
+      for (const key of ['sprint', 'practice', ...(ids === null ? ['walkDraft'] : [])]) tx.objectStore('kv').delete(key);
       await done(tx);
     },
 

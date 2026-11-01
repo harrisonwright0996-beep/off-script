@@ -244,7 +244,7 @@ export function showSettings(ctx) {
           select('breakMinutes', 'Break length', OPTIONS.breakMinutes),
         ),
         h('h2', {}, 'Reading aloud and Walk'),
-        h('div', { class: 'group' }, voiceField(), select('walkGap', 'Time to say each line on a walk', OPTIONS.walkGap)),
+        h('div', { class: 'group' }, voiceField(), select('walkGap', 'Time to say each line on a walk', OPTIONS.walkGap), check('walkCoach', 'A voice says what to do on walks')),
         h('h2', {}, 'Dates'),
         h(
           'div',

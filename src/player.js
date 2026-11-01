@@ -1,5 +1,6 @@
 // Plays a walk tape in one <audio> element, which carries on with the screen locked in an
-// installed app. Earbud controls: next track marks a miss, previous track replays the line.
+// installed app. Earbud controls: next track marks a miss, previous track replays the line. After a
+// pause, a call or anything else that stops it, it picks up from resumeFrom (the line's cue).
 import { concatBytes } from './mp3.js';
 
 export function tapeBlob(steps, clips, silence) {
@@ -15,10 +16,11 @@ export function tapeBlob(steps, clips, silence) {
   return new Blob([concatBytes(parts)], { type: 'audio/mpeg' });
 }
 
-export function createPlayer({ onMark, onReplay, onTime, onEnded, onError }) {
+export function createPlayer({ onMark, onReplay, onTime, onEnded, onError, resumeFrom }) {
   const audio = new Audio();
   audio.preload = 'auto';
   let url = null;
+  let stopped = false; // paused part way: the next play is a resume
   const ms = typeof navigator !== 'undefined' ? navigator.mediaSession : undefined;
 
   const handlers = {
@@ -39,8 +41,17 @@ export function createPlayer({ onMark, onReplay, onTime, onEnded, onError }) {
   audio.addEventListener('timeupdate', () => onTime && onTime(audio.currentTime));
   audio.addEventListener('ended', () => onEnded && onEnded());
   audio.addEventListener('error', () => onError && onError(audio.error));
-  audio.addEventListener('play', () => ms && (ms.playbackState = 'playing'));
-  audio.addEventListener('pause', () => ms && (ms.playbackState = 'paused'));
+  audio.addEventListener('play', () => {
+    if (ms) ms.playbackState = 'playing';
+    if (!stopped) return;
+    stopped = false;
+    const from = resumeFrom && resumeFrom(audio.currentTime);
+    if (from != null) audio.currentTime = Math.max(0, from);
+  });
+  audio.addEventListener('pause', () => {
+    if (ms) ms.playbackState = 'paused';
+    stopped = !audio.ended;
+  });
 
   return {
     audio,
@@ -68,6 +79,8 @@ export function createPlayer({ onMark, onReplay, onTime, onEnded, onError }) {
     },
     destroy() {
       audio.pause();
+      if (ms) ms.metadata = null;
+      if (ms) ms.playbackState = 'none';
       if (ms) for (const action of Object.keys(handlers)) {
         try {
           ms.setActionHandler(action, null);

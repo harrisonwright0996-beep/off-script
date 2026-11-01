@@ -13,6 +13,7 @@ export const DEFAULT_SETTINGS = {
   letterSpacing: 'normal', // 'normal', 'wide' or 'wider'
   theme: 'cream', // 'cream', 'light', 'dark' or 'auto'
   walkGap: 'normal', // 'shorter', 'normal' or 'longer'
+  walkCoach: true, // the spoken coach on walks
   voiceURI: null,
   rate: 1,
   focusScene: null, // "Learn this scene next"

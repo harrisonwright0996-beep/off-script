@@ -123,18 +123,18 @@ test('a beat part learned on a walk hears only its lines still to be taught, eac
   assert.deepEqual(runs(b), [...b, ...b], 'a beat with nothing left to teach is just run, twice');
 });
 
-test('a walk of any length teaches a beat whole, both runs, or leaves it for another time, and keeps to the length asked', () => {
+test('a walk of any length teaches what fits, both runs of it, and keeps to the length asked', () => {
   const { app, manifest } = walkApp();
   for (const seconds of [120, 300, 480, 600, 900, 1200, 1800]) {
     const tape = walk(app, manifest, seconds);
     for (const { id } of tape.heard) assert.equal(tape.trials.filter((tr) => tr.id === id && tr.queue === 'beat').length, 2, `${seconds} s: both runs of every line taught`);
     assert.ok(tape.duration <= seconds + 30, `${seconds} s: ${Math.round(tape.duration)} s long`);
   }
-  // On a first walk, with nothing to check, the first beat is taught even if it runs over.
+  // On a first walk, with nothing to check, as much of the first beat as fits, at least one line.
   const fresh = fakeApp();
   const first = buildWalk({ model: fresh.model, index: fresh.index, manifest: readAudioPack(buildFixturePack(fresh.model)).manifest, getState: fresh.getState, settings: fresh.settings, plan: fresh.plan(), start: fresh.clock, seconds: 60 });
-  assert.deepEqual(first.heard.map((x) => x.id), fresh.model.beats[0].itemIds);
-  assert.equal(first.trials.length, 2 * fresh.model.beats[0].itemIds.length);
+  assert.ok(first.heard.length >= 1 && first.heard.every(({ id }, i) => id === fresh.model.beats[0].itemIds[i]));
+  assert.equal(first.trials.filter((tr) => tr.queue === 'beat').length, 2 * first.heard.length);
 });
 
 test('after a walk its results are saved at the moments heard, and a later walk brings the new lines back', () => {
@@ -207,5 +207,9 @@ test('a cue made longer plays the lines before it from the pack; a new beat open
   const timed2 = timeline(tape);
   const opening = timed2.findIndex((s) => s.clip === clips(first).line.file);
   assert.ok(timed2.slice(opening - 2, opening).some((s) => s.clip === manifest.headings[0].file));
-  for (const tr of tape.trials.filter((x) => x.id === second)) assert.deepEqual(before(tr), []);
+  for (const tr of tape.trials.filter((x) => x.id === second)) {
+    const after = tape.trials[tape.trials.indexOf(tr) - 1].answerEnd;
+    assert.deepEqual(timed.filter((s) => s.clip && s.at >= after - 1e-9 && s.at < tr.start - 1e-9), []);
+    assert.equal(before(tr).at(-1), clips(first).line.file, 'going back to it starts at the line before');
+  }
 });

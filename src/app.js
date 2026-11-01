@@ -46,6 +46,7 @@ async function boot() {
     eventsFrom: null,
     manifest: (await store.get('manifest')) || null,
     update: false, // a new version has taken over: it shows at the next Today
+    nav: 0,
     cleanup: null,
     fit: { k: 1, n: 0 }, // his forgetting curve factor, refitted when a sprint or walk starts
 
@@ -107,6 +108,7 @@ async function boot() {
     async go(name, params = {}) {
       if (ctx.update && AT_REST.has(name)) return location.reload();
       ctx.screen = name;
+      ctx.nav += 1; // lets a screen see that it was left while it waited
       if (ctx.cleanup) ctx.cleanup();
       ctx.cleanup = null;
       if (ctx.model && name !== 'install' && name !== 'setup') await ctx.refreshEvents();

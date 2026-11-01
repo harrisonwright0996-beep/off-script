@@ -14,8 +14,27 @@
 import { applyResult, needsTeaching } from './state.js';
 import { beatStage, extraRunsOf, phaseOf, readyLines, testsOf, REVIEW_BURST } from './plan.js';
 import { dayKey } from './dates.js';
+import { STEPS } from './coach.js';
+
+// How many times in a tape the coach gives the full words before it keeps to the short ones, or none.
+export const COACH_FULL = 3;
 
 export const GAP_FACTOR = { shorter: 0.75, normal: 1, longer: 1.4 };
+// How long after a line is taught a tap still means that line.
+const TAIL = 2;
+
+// The clips of a line's cue, in order. A hearing on a card and a tape say it the same way. A cue made
+// longer so that only one line fits (uniqueCues) plays the first lead line's cue and then each lead
+// line, from clips the pack already has, or the usual clip if any of them is missing.
+export function cueClips(it, index, manifest, long = true) {
+  const audio = (id) => manifest.items[id];
+  const more = long && index.cues && index.cues.get(it.id);
+  const first = more && more.lead[0];
+  const opener = first && (more.lines[0]?.speaker === null ? manifest.headings[it.scene] : audio(first)?.cue);
+  if (opener && more.lead.every(audio)) return [opener, ...more.lead.map((id) => audio(id).line)];
+  const one = it.cue.speaker === null ? manifest.headings[it.scene] : audio(it.id)?.cue;
+  return one ? [one] : [];
+}
 
 // Time to say the line: about 2.3 words a second, plus 1.5 seconds to find it.
 export function gapSeconds(words, setting = 'normal') {
@@ -29,6 +48,8 @@ export function buildWalk({ model, index, manifest, getState, settings, plan, st
   const steps = [];
   const trials = [];
   const parts = [];
+  const teaching = []; // each line as it is taught, for the earbuds: { id, start, end }
+  const guide = []; // what to do now, for the screen and the lock screen: { label, start }
   const unit = manifest.silence.duration;
   let t = 0;
   let missing = 0;
@@ -57,27 +78,34 @@ export function buildWalk({ model, index, manifest, getState, settings, plan, st
     }
     return false;
   };
-  // A line's cue: the scene heading or the cue clip. A cue made longer so that only one line fits
-  // (uniqueCues) plays the first lead line's cue and then each lead line, from clips the pack already
-  // has, or the usual clip if any of them is missing. Not to open a new beat, just before it is heard.
-  const cue = (it, long = true) => {
-    const more = long && index.cues && index.cues.get(it.id);
-    const first = more && byId.get(more.lead[0]);
-    if (first && more.lead.every(audio) && (first.cue.speaker === null || audio(first.id).cue)) {
-      clip(first.cue.speaker === null ? manifest.headings[first.scene] : audio(first.id).cue);
-      for (const id of more.lead) clip(audio(id).line);
-      return;
-    }
-    clip(it.cue.speaker === null ? manifest.headings[it.scene] : audio(it.id).cue);
+  // A line's cue: not to open a new beat, just before it is heard (long false).
+  const cue = (it, long = true) => cueClips(it, index, manifest, long).forEach(clip);
+  // The coach: a clip if the pack has one (a tape works without), and the same words on screen.
+  const says = (key) => {
+    const ref = manifest.coach && manifest.coach[key];
+    if (ref) clip(ref);
+  };
+  const told = {};
+  let said = 0; // where the last line heard began: the cue of the line after it
+  const step = (key) => guide.push({ label: STEPS[key], start: t });
+  // The full words for the first few times in a tape, then the short ones (or none).
+  const prompt = (key, short = null) => {
+    told[key] = (told[key] || 0) + 1;
+    step(key);
+    if (told[key] <= COACH_FULL) says(key);
+    else if (short) says(short);
   };
   const answer = (it) => {
+    said = t;
     const name = manifest.speakers[it.speaker];
     if (name && it.askSpeaker) clip(name);
     clip(audio(it.id).line);
   };
   const recall = (it, queue, replayFrom) => {
     const begin = t;
+    prompt('turn', 'turnShort');
     silence(gapSeconds(it.words, gap));
+    prompt('here');
     answer(it);
     trials.push({ id: it.id, queue, start: begin, answerEnd: t, end: t + 2, replayFrom });
     const time = start + t * 1000;
@@ -101,8 +129,12 @@ export function buildWalk({ model, index, manifest, getState, settings, plan, st
         prev = null;
         continue;
       }
-      const from = t;
-      if (cueEvery || !prev || prev.index !== it.index - 1 || prev.scene !== it.scene) cue(it);
+      const cued = cueEvery || !prev || prev.index !== it.index - 1 || prev.scene !== it.scene;
+      const from = cued ? t : said;
+      if (cued) {
+        step('cue');
+        cue(it);
+      }
       recall(it, queue, from);
       prev = it;
     }
@@ -131,36 +163,50 @@ export function buildWalk({ model, index, manifest, getState, settings, plan, st
   // cue, with a gap after each to say it back; lines already right once are not heard again, as a
   // sprint does not teach them again. Then the whole beat run from its first cue, the first time each
   // new line is asked for, a few minutes after it was heard. Its second run waits for the next beat
-  // (or for the end of new beats). A beat is learned whole: if it and its second run do not fit, it
-  // is left for another time.
+  // (or for the end of new beats). If it and its second run do not fit, as many of its lines as fit
+  // are taught, up to half at a time; on a walk with nothing on it yet, at least one line.
   const learnBeat = (beat) => {
     const ids = beat.itemIds.filter(usable);
     if (!ids.length) return true;
-    const mark = { steps: steps.length, trials: trials.length, parts: parts.length, heard: heard.length, t, lastLabel, sim: new Map(sim) };
+    for (let n = ids.length; n >= 1; n = n === 1 ? 0 : Math.ceil(n / 2)) if (learnLines(beat, ids.slice(0, n))) return true;
+    return false;
+  };
+  const learnLines = (beat, ids) => {
+    const mark = { steps: steps.length, trials: trials.length, parts: parts.length, teaching: teaching.length, guide: guide.length, heard: heard.length, t, lastLabel, told: { ...told }, sim: new Map(sim) };
     part(`New: ${heading(beat.scene)}`);
     let prev = null;
     for (const id of ids.filter((x) => needsTeaching(stateOf(x)))) {
       const it = byId.get(id);
+      const begin = t;
+      prompt('listen');
       if (!prev || prev.index !== it.index - 1 || prev.scene !== it.scene) cue(it, false);
       heard.push({ id, at: t });
-      for (let n = 0; n < 2; n++) {
-        answer(it);
-        silence(gapSeconds(it.words, gap));
-      }
+      answer(it);
+      prompt('sayBack');
+      silence(gapSeconds(it.words, gap));
+      prompt('again');
+      answer(it);
+      prompt('sayBack');
+      silence(gapSeconds(it.words, gap));
+      teaching.push({ id, start: begin, end: t });
       prev = it;
     }
     const from = t;
+    if (teaching.length > mark.teaching) prompt('run');
     sequence(ids, 'beat', false, true);
     const sec = t - from;
-    if (t + sec + (pending ? pending.sec : 0) > seconds && mark.trials > 0) {
+    if (t + sec + (pending ? pending.sec : 0) > seconds && (mark.trials > 0 || ids.length > 1)) {
       steps.length = mark.steps;
       trials.length = mark.trials;
       parts.length = mark.parts;
+      teaching.length = mark.teaching;
+      guide.length = mark.guide;
+      for (const key of Object.keys(told)) told[key] = mark.told[key] || 0;
       heard.length = mark.heard;
       t = mark.t;
       lastLabel = mark.lastLabel;
       sim.clear();
-      for (const [id, s] of mark.sim) sim.set(id, s);
+      for (const [id, st] of mark.sim) sim.set(id, st);
       return false;
     }
     secondRun();
@@ -168,6 +214,7 @@ export function buildWalk({ model, index, manifest, getState, settings, plan, st
     return true;
   };
 
+  says('intro');
   const beats = [...plan.newBeats, ...plan.ahead].filter((id) => beatById.has(id));
   const taught = new Set();
   const extraDone = new Set(); // an extra run of each scene at most once a tape
@@ -201,7 +248,10 @@ export function buildWalk({ model, index, manifest, getState, settings, plan, st
     if (trials.length === before) break; // nothing more can be added
   }
   secondRun();
-  return { steps, trials, parts, heard, duration: t, missing };
+  step('end');
+  says('end');
+  if (trials.length) trials[trials.length - 1].end = Math.max(trials[trials.length - 1].end, t); // the closing words too
+  return { steps, trials, parts, teaching, guide, heard, duration: t, missing };
 }
 
 // Which trial a double tap at this moment means: the earliest one whose window (gap, answer and
@@ -210,21 +260,60 @@ export function trialAt(trials, time) {
   return trials.findIndex((tr) => tr.start <= time && time <= tr.end);
 }
 
+const teachingAt = (tape, time, tail = 0) => tape.teaching.find((w) => w.start <= time && time <= w.end + tail);
+
+// The trial a mark at this moment goes against. A line being taught has no answer yet, so a mark
+// there goes against its first trial on the tape: it needs more help. -1 if no line is at hand.
+export function markTrial(tape, time) {
+  const i = trialAt(tape.trials, time);
+  if (i >= 0) return i;
+  const w = teachingAt(tape, time, TAIL);
+  return w ? tape.trials.findIndex((tr) => tr.id === w.id) : -1;
+}
+
+// How many lines are marked: a line marked on two trials is one line, as the review shows it.
+export const markedLines = (tape, marked) => new Set([...marked].map((i) => tape.trials[i].id)).size;
+
+const replayFromOf = (tr) => tr.replayFrom ?? tr.start;
+
+// Where back goes from this moment: the cue of the line at hand, or the start of a line being
+// taught. null if no line is at hand.
+export function replayPoint(tape, time) {
+  const i = trialAt(tape.trials, time);
+  if (i >= 0) return replayFromOf(tape.trials[i]);
+  const w = teachingAt(tape, time, TAIL);
+  if (w) return w.start;
+  const next = tape.trials.find((tr) => replayFromOf(tr) <= time && time < tr.start);
+  return next ? replayFromOf(next) : null;
+}
+
+// Where a tape picks up after a pause or a call: the cue of the line under way, or the start of a
+// line being taught, so he never lands in a gap with nothing to go on. null: it carries on from here.
+export function resumePoint(tape, time) {
+  const tr = tape.trials.find((x) => replayFromOf(x) <= time && time < x.answerEnd);
+  if (tr) return replayFromOf(tr);
+  const w = teachingAt(tape, time);
+  return w ? w.start : null;
+}
+
 // The part label playing now, for the lock screen.
 export function partAt(parts, time) {
-  let label = parts.length ? parts[0].label : '';
+  let label = '';
   for (const p of parts) if (p.start <= time) label = p.label;
   return label;
 }
 
 // The review list: one row per line covered, in order, ticked if any of its trials was marked.
-// Only trials whose answer was fully heard count.
+// Only trials whose answer was fully heard count, and marked ones, so a doubt is never lost: those
+// not heard (unheard) are saved only if their row stays ticked.
 export function reviewRows(tape, marked, stoppedAt = Infinity) {
   const rows = new Map();
   tape.trials.forEach((tr, i) => {
-    if (tr.answerEnd > stoppedAt) return;
-    const row = rows.get(tr.id) || { id: tr.id, trials: [], ticked: false };
+    const unheard = tr.answerEnd > stoppedAt;
+    if (unheard && !marked.has(i)) return;
+    const row = rows.get(tr.id) || { id: tr.id, trials: [], unheard: [], ticked: false };
     row.trials.push(i);
+    if (unheard) row.unheard.push(i);
     if (marked.has(i)) row.ticked = true;
     rows.set(tr.id, row);
   });
@@ -242,7 +331,7 @@ export function walkResults(tape, rows, marked) {
     (own.length ? own : [row.trials[row.trials.length - 1]]).forEach((i) => missed.add(i));
   }
   return rows
-    .flatMap((row) => row.trials)
+    .flatMap((row) => (row.ticked ? row.trials : row.trials.filter((i) => !row.unheard.includes(i))))
     .sort((a, b) => a - b)
     .map((i) => ({ trial: i, id: tape.trials[i].id, queue: tape.trials[i].queue, pass: !missed.has(i), at: tape.trials[i].answerEnd, tapeAt: tape.trials[i].answerEnd }));
 }
@@ -251,15 +340,17 @@ export function walkResults(tape, rows, marked) {
 // at the moment its answer was heard. start: when the tape began playing (ms). Each event carries the
 // seconds of tape since the answer before (active), new lines heard in between included, so the
 // whole walk counts as practice. Rounded on the running total, so that however long the walk, they
-// add up to the tape time.
+// add up to the tape time. A walk kept from days ago changes nothing on a line answered since: what
+// came later is the truer picture. Nor does a walk saved twice, if the first save was cut off.
 export function walkRecords(results, { start, getState, k = 1 }) {
   const states = new Map();
   let prevAt = 0;
   const tenths = (x) => Math.round(x * 10) / 10;
-  return results.map((r) => {
+  return results.flatMap((r) => {
     const time = start + r.at * 1000;
     const day = dayKey(new Date(time));
     const prev = states.get(r.id) || getState(r.id);
+    if (prev.lastTime != null && prev.lastTime >= time) return [];
     const state = applyResult(prev, { pass: r.pass, day, time, mode: 'walk', k });
     states.set(r.id, state);
     const event = { time, day, id: r.id, pass: r.pass, mode: 'walk', queue: r.queue, misses: r.pass ? 0 : 1, speakerWrong: false, relearn: false, prev };
@@ -267,6 +358,6 @@ export function walkRecords(results, { start, getState, k = 1 }) {
       event.active = tenths(tenths(r.tapeAt) - prevAt);
       prevAt = tenths(r.tapeAt);
     }
-    return { event, state };
+    return [{ event, state }];
   });
 }

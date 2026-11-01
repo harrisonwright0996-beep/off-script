@@ -1,6 +1,7 @@
 // Today: what the plan holds right now, how far the play has come, and one obvious next action.
 // Worked out afresh whenever the screen opens or the phone comes back to it.
-import { h, clear, screen, button, focusHeading, num, plural } from './dom.js';
+import { h, clear, screen, button, focusHeading, num, plural, settled } from './dom.js';
+import { keptWalk } from './walk.js';
 import { duration, untilText } from '../plan.js';
 import { formatDay } from '../dates.js';
 
@@ -59,7 +60,10 @@ export function mapOf(progress) {
 export function showToday(ctx) {
   async function render() {
     if (ctx.update) return location.reload(); // nothing is under way here
+    const nav = ctx.nav;
     await ctx.refreshEvents();
+    const kept = await keptWalk(ctx);
+    if (ctx.nav !== nav) return;
     ctx.refit();
     const plan = ctx.plan();
     const s = ctx.settings;
@@ -72,6 +76,7 @@ export function showToday(ctx) {
     const next = plan.day <= s.deadline ? `Off script by ${formatDay(s.deadline, { long: true })}.` : s.showDay && plan.day < s.showDay ? `Show week from ${formatDay(s.showDay, { long: true })}.` : null;
     if (next) body.push(h('p', { class: 'help' }, next));
     for (const note of plan.notes) body.push(h('p', { class: 'message' }, note));
+    if (kept) body.push(h('p', { class: 'message' }, 'Your last walk is waiting to be saved.'), button('Save it', settled(() => ctx.go('walk')), { class: 'btn' }));
 
     if (plan.done) {
       body.push(
