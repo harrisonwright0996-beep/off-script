@@ -187,6 +187,7 @@ export function showSettings(ctx) {
           if (b.settings) await ctx.saveSettings(withDefaults(b.settings));
           ctx.states = new Map(b.states.map((st) => [st.id, st]));
           ctx.eventsFrom = null;
+          await ctx.rebuildStreak();
           announce('Backup restored');
           ctx.go('today');
         }, { class: 'btn primary' }),
@@ -245,12 +246,14 @@ export function showSettings(ctx) {
         ),
         h('h2', {}, 'Reading aloud and Walk'),
         h('div', { class: 'group' }, voiceField(), select('walkGap', 'Time to say each line on a walk', OPTIONS.walkGap), check('walkCoach', 'A voice says what to do on walks')),
+        h('h2', {}, 'Today'),
+        h('div', { class: 'group' }, check('showPercent', 'Show the % on Today'), check('showStreaks', 'Streaks and badges')),
         h('h2', {}, 'Dates'),
         h(
           'div',
           { class: 'group' },
           date('deadline', 'Off script day'),
-          date('lastNewDay', 'Last day for new lines', order || 'After this day it is all runs, so everything is solid for off script day.'),
+          date('lastNewDay', 'Last day for new lines', order || 'The app paces new lines to meet them all by this day. Any left after it still come.'),
           date('showDay', 'Show week starts'),
         ),
         h('h2', {}, 'Script and audio'),

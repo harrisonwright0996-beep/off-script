@@ -24,6 +24,13 @@ for (const theme of ['cream', 'light', 'dark']) {
     await page.evaluate((t) => window.offScript.saveSettings({ theme: t }), theme);
     await page.evaluate(() => window.offScript.go('today'));
     await check(page, 'today', found);
+    await page.evaluate(() => {
+      const o = window.offScript;
+      o.streak.badges.push('first-walk', 'quarter');
+      return o.go('badges');
+    });
+    await check(page, 'badges', found);
+    await page.evaluate(() => window.offScript.go('today'));
 
     // The second line's cue made longer, as uniqueCues does for a cue that leads to more than one line
     // (the invented play has none), so a long cue is checked too.

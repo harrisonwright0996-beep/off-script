@@ -2,6 +2,8 @@
 // Worked out afresh whenever the screen opens or the phone comes back to it.
 import { h, clear, screen, button, focusHeading, num, plural, settled } from './dom.js';
 import { keptWalk } from './walk.js';
+import { streakBlock } from './badges.js';
+import { wordPercent } from '../streak.js';
 import { duration, untilText } from '../plan.js';
 import { formatDay } from '../dates.js';
 
@@ -71,7 +73,9 @@ export function showToday(ctx) {
     const now = Date.now();
     const body = [];
 
+    if (s.showPercent) body.push(h('p', { class: 'percent' }, `${wordPercent(ctx.model.items, ctx.getState)}%`));
     body.push(h('p', { class: 'headline' }, `${num(p.perfectWords)} of ${num(p.totalWords)} words word perfect`));
+    if (s.showStreaks) body.push(streakBlock(ctx));
     // What comes next: off script day, then show week.
     const next = plan.day <= s.deadline ? `Off script by ${formatDay(s.deadline, { long: true })}.` : s.showDay && plan.day < s.showDay ? `Show week from ${formatDay(s.showDay, { long: true })}.` : null;
     if (next) body.push(h('p', { class: 'help' }, next));
@@ -101,6 +105,7 @@ export function showToday(ctx) {
       { class: 'row' },
       button('Walk', () => ctx.go('walk')),
       button('Scenes', () => ctx.go('scenes')),
+      s.showStreaks ? button('Badges', () => ctx.go('badges')) : null,
       button('Settings', () => ctx.go('settings')),
     );
     const choose = button('Choose what to practise', () => ctx.go('choose'));

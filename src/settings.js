@@ -14,6 +14,8 @@ export const DEFAULT_SETTINGS = {
   theme: 'cream', // 'cream', 'light', 'dark' or 'auto'
   walkGap: 'normal', // 'shorter', 'normal' or 'longer'
   walkCoach: true, // the spoken coach on walks
+  showPercent: true, // the % on Today
+  showStreaks: true, // streaks and badges
   voiceURI: null,
   rate: 1,
   focusScene: null, // "Learn this scene next"

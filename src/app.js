@@ -6,6 +6,7 @@ import { newState } from './state.js';
 import { buildPlan } from './plan.js';
 import { fitFactor } from './memory.js';
 import { dayKey, addDays } from './dates.js';
+import { addSeconds, cleanStreak, creditFor, noteSlips, rebuildStreak } from './streak.js';
 import { clear, focusHeading } from './ui/dom.js';
 import { showInstall, needsInstall } from './ui/install.js';
 import { showSetup } from './ui/setup.js';
@@ -16,8 +17,9 @@ import { showSettings } from './ui/settings.js';
 import { showWalk } from './ui/walk.js';
 import { showChoose } from './ui/choose.js';
 import { showStartAgain } from './ui/again.js';
+import { showBadges } from './ui/badges.js';
 
-const SCREENS = { install: showInstall, setup: showSetup, today: showToday, sprint: showSprint, scenes: showScenes, reader: showReader, settings: showSettings, walk: showWalk, choose: showChoose, again: showStartAgain };
+const SCREENS = { install: showInstall, setup: showSetup, today: showToday, sprint: showSprint, scenes: showScenes, reader: showReader, settings: showSettings, walk: showWalk, choose: showChoose, again: showStartAgain, badges: showBadges };
 const EVENT_DAYS = 9; // the plan looks back this far
 // A new version restarts the app on these, as it does on Today. Everywhere else something may be under
 // way: a sprint, a walk, a scene read aloud, or typing.
@@ -44,6 +46,7 @@ async function boot() {
     states: new Map(),
     events: [],
     eventsFrom: null,
+    streak: cleanStreak(await store.get('streak')), // minutes practised, badges (streak.js)
     manifest: (await store.get('manifest')) || null,
     update: false, // a new version has taken over: it shows at the next Today
     nav: 0,
@@ -82,12 +85,26 @@ async function boot() {
       rec.event.key = await store.saveAnswer(rec.event, rec.state);
       ctx.states.set(rec.state.id, rec.state);
       ctx.events.push(rec.event);
+      rec.credit = creditFor(rec.event, ctx.index.byId.get(rec.event.id)?.words ?? 0);
+      addSeconds(ctx.streak, rec.event.day, rec.credit);
+      noteSlips(ctx.streak, rec.event.prev, rec.state);
+      await ctx.saveStreak();
     },
 
     async undoAnswer(rec) {
       await store.undo(rec.event.key, rec.event.prev);
       ctx.states.set(rec.event.id, rec.event.prev);
       ctx.events = ctx.events.filter((e) => e !== rec.event);
+      addSeconds(ctx.streak, rec.event.day, -(rec.credit || 0));
+      await ctx.saveStreak();
+    },
+
+    saveStreak: () => store.set('streak', ctx.streak).catch(() => {}), // never holds up an answer
+
+    // The record, from the answers on this phone.
+    async rebuildStreak() {
+      ctx.streak = rebuildStreak(await store.eventsSince('2000-01-01'), ctx.index);
+      await ctx.saveStreak();
     },
 
     // Back to not started: these lines (every line when ids is null) lose their progress and answers.
@@ -127,6 +144,7 @@ async function boot() {
     ctx.model = model;
     ctx.index = indexModel(model);
     for (const s of await store.allStates()) ctx.states.set(s.id, s);
+    if (!(await store.get('streak'))) await ctx.rebuildStreak();
   }
   registerServiceWorker(ctx);
 

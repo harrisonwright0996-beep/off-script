@@ -11,6 +11,7 @@ import { canSpeak, speak } from '../tts.js';
 import { untilText } from '../plan.js';
 import { keypad } from './keypad.js';
 import { hearCue, stopCue } from './hearcue.js';
+import { rewardCard } from './badges.js';
 
 const SAVED = 'sprint';
 export const PRACTICE = 'practice'; // a chosen practice, saved apart from the day's sprint
@@ -476,7 +477,7 @@ export async function showSprint(ctx, { scope = 'all', minutes = null, custom = 
 
   function plain(title, body, footer) {
     quiet();
-    clear(ctx.root).append(screen({ title, back: act(stop), backLabel: 'Today', body, footer }));
+    clear(ctx.root).append(screen({ title, back: act(stop), backLabel: 'Today', body: [rewardCard(ctx), ...body], footer }));
     focusHeading(ctx.root);
   }
 

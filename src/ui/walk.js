@@ -10,6 +10,8 @@ import { canSpeak, speak, stopSpeaking } from '../tts.js';
 import { tokenize, keyedCount, joinTokens } from '../tokens.js';
 import { duration } from '../plan.js';
 import { COACH_SPEECH } from '../coach.js';
+import { WALK_COUNTS } from '../streak.js';
+import { rewardCard } from './badges.js';
 
 const LENGTHS = [15, 30, 45, 60, 90];
 const DRAFT = 'walkDraft'; // what a walk heard, until it is saved or let go
@@ -435,12 +437,13 @@ export function showWalk(ctx) {
           });
           const records = walkRecords(results, { start, getState: ctx.getState, k: plan.k });
           for (const rec of records) await ctx.saveAnswer(rec);
+          if (records.reduce((n, r) => n + (r.event.active || 0), 0) >= WALK_COUNTS) ctx.streak.walks += 1;
           await kept;
           await ctx.store.del(DRAFT);
           ctx.refit();
           const missed = rows.filter((r) => r.ticked).length;
           announce('Walk saved');
-          page('Walk saved', [h('p', { class: 'lead' }, `${plural(rows.length, 'line')}, ${missed ? `${missed} to look at again` : 'all word perfect'}.`)], [
+          page('Walk saved', [rewardCard(ctx), h('p', { class: 'lead' }, `${plural(rows.length, 'line')}, ${missed ? `${missed} to look at again` : 'all word perfect'}.`)], [
             button(`Another ${length} minutes`, settled(() => build(length)), { class: 'btn primary' }),
             button('A different length', settled(choose)),
             button('Back to Today', settled(() => ctx.go('today'))),
