@@ -12,13 +12,15 @@ test('the offline cache lists every app file, and only those', () => {
   assert.deepEqual([...listed].sort(), want.sort());
 });
 
-test('the page cannot send anything anywhere, and has no inline script or style', () => {
+test('the page can reach only the reminders worker, only reminders.js does, and it has no inline script or style', () => {
   const html = read('index.html');
   const csp = html.match(/http-equiv="Content-Security-Policy" content="([^"]+)"/)[1];
-  assert.equal(csp, "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data: blob:; media-src 'self' blob:; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'");
+  assert.equal(csp, "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data: blob:; media-src 'self' blob:; connect-src 'self' https://off-script-reminders.off-script-lines.workers.dev; object-src 'none'; base-uri 'none'; form-action 'none'");
   assert.doesNotMatch(html, /<script(?![^>]*\bsrc=)[^>]*>/, 'no inline scripts');
   assert.doesNotMatch(html, /<style|\sstyle=/, 'no inline styles');
-  for (const f of [...ls('src', '.js'), ...ls('src/ui', '.js')]) assert.doesNotMatch(read(f), /\bfetch\(|XMLHttpRequest|sendBeacon|WebSocket|EventSource/, `${f} sends nothing`);
+  const sends = [...ls('src', '.js'), ...ls('src/ui', '.js')].filter((f) => /\bfetch\(|XMLHttpRequest|sendBeacon|WebSocket|EventSource/.test(read(f)));
+  assert.deepEqual(sends, ['src/reminders.js']);
+  assert.equal(read('src/reminders.js').match(/\bfetch\(/g).length, 1, 'one way out');
 });
 
 test('no italics anywhere', () => {

@@ -4,11 +4,12 @@ Learn a whole play, word for word and cue by cue, on an iPhone.
 
 Off Script is a web app you add to your Home Screen. You load your own script and it teaches you every line together with the cue before it. Between new lines it tests you on what you have already learnt, using a forgetting curve to bring each line back just before you would lose it. Walk mode reads cues aloud, so you can practise on the move with the screen locked.
 
-## Nothing leaves your phone
+## Your script never leaves your phone
 
 * Your script is read on your phone and kept only there, in this site's storage in Safari.
-* The app makes no network requests except to load its own files, and its content security policy blocks any others.
-* There is no account, no server and no analytics.
+* The app makes no network requests except to load its own files and, only if you turn reminders on, to tell the small worker in `worker/` when to send the next one. Its content security policy blocks any others.
+* Reminders send the worker a push address and a time, nothing else. The push itself is empty: the phone writes the words.
+* There is no account and no analytics.
 * Backups are files you save yourself. They hold line ids and results, never the words.
 * This repository holds no script and never will. A privacy check runs before every push.
 

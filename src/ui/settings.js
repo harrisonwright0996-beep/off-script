@@ -7,6 +7,7 @@ import { makeBackup, readBackup } from '../backup.js';
 import { withDefaults } from '../settings.js';
 import { dayKey, formatDay } from '../dates.js';
 import { canSpeak, voices, onVoicesChanged, speak } from '../tts.js';
+import { canPush, disable, enable, liveSub } from '../reminders.js';
 
 const OPTIONS = {
   textSize: [90, 100, 115, 130, 150, 175, 200].map((n) => [n, `${n}%`]),
@@ -33,6 +34,8 @@ const BACKUP_PROBLEMS = {
   'not-backup': 'That file is not an Off Script backup.',
   newer: 'That backup is from a newer version of Off Script. Update the app first.',
 };
+
+const FORGET_WAIT = 3000; // no signal must not hold up removing everything
 
 const when = (ms) => {
   const d = new Date(ms);
@@ -206,6 +209,7 @@ export function showSettings(ctx) {
       [
         button('Keep everything', () => ctx.go('settings'), { class: 'btn primary' }),
         button('Remove everything', settled(async () => {
+          await Promise.race([disable(ctx), new Promise((done) => setTimeout(done, FORGET_WAIT))]);
           await ctx.store.removeEverything();
           try {
             localStorage.clear();
@@ -217,6 +221,26 @@ export function showSettings(ctx) {
       ],
     );
   }
+
+  // Reminders: on or off. On a phone that cannot have them, it says why.
+  const reminderBox = h('div', { class: 'stack' });
+  let turning = false;
+  async function drawReminders(problem = null, focus = false) {
+    if (!canPush()) return clear(reminderBox).append(h('p', { class: 'help' }, 'Reminders need Off Script on your Home Screen, on an up to date iPhone.'));
+    const on = !!(await liveSub(ctx).catch(() => null));
+    const toggle = button(on ? 'Turn reminders off' : 'Turn reminders on', settled(async () => {
+      if (turning) return; // a second tap is not a second subscription
+      turning = true;
+      let trouble = null;
+      if (on) await disable(ctx);
+      else if (!(await enable(ctx).catch(() => false))) trouble = 'Reminders did not switch on. Check notifications are allowed for Off Script in your iPhone settings.';
+      turning = false;
+      await drawReminders(trouble, true);
+    }));
+    clear(reminderBox).append(...[h('p', { class: 'help', role: 'status' }, on ? 'Reminders are on.' : 'Reminders are off.'), problem ? h('p', { class: 'message', role: 'alert' }, problem) : null, toggle].filter(Boolean));
+    if (focus) toggle.focus();
+  }
+  drawReminders();
 
   const order = s.lastNewDay < s.deadline ? null : 'The last day for new lines should be before off script day.';
 
@@ -252,6 +276,8 @@ export function showSettings(ctx) {
         h('div', { class: 'group' }, voiceField(), select('walkGap', 'Time to say each line on a walk', OPTIONS.walkGap), check('walkCoach', 'A voice says what to do on walks'), check('walkDirections', 'Stage directions on walks'), check('typedOnly', 'Walks prove nothing: only typed checks count'), h('p', { class: 'help' }, 'A line right on a walk then changes nothing. Off, because walks are most of your practice: turned on, the plan falls far behind.')),
         h('h2', {}, 'Today'),
         h('div', { class: 'group' }, check('oneButton', 'One main button, with the rest under More'), check('showPercent', 'Show the % on Today'), check('showStreaks', 'Streaks and badges')),
+        h('h2', {}, 'Reminders'),
+        h('div', { class: 'group' }, reminderBox, h('p', { class: 'help' }, 'If today’s plan is not done, a nudge comes about 3 hours after you last used the app: 4 to 9.30 on weekdays, 10 to 9 at weekends. Once the plan is done, nothing until tomorrow.')),
         h('h2', {}, 'Dates'),
         h(
           'div',
@@ -288,7 +314,7 @@ export function showSettings(ctx) {
             button('Remove everything', settled(removeAll)),
           ),
         ),
-        h('p', { class: 'help' }, 'Off Script keeps everything on this phone. Nothing is sent anywhere.'),
+        h('p', { class: 'help' }, 'Off Script keeps everything on this phone. Your script is never sent anywhere. If reminders are on, the time of your next one and this phone’s push address go to a small server, and nothing else.'),
       ],
     }),
   );

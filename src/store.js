@@ -1,4 +1,5 @@
-// Everything the app keeps, in IndexedDB on the phone. Nothing is ever sent anywhere.
+// Everything the app keeps, in IndexedDB on the phone. None of it is ever sent anywhere: reminders.js
+// sends only a push address and a time, and only if reminders are on.
 // Stores: kv (settings, script model, audio manifest, saved sprint), items (one state per item),
 // events (every answer, for the plan and for undo), audio (MP3 clips by file name).
 const DB = 'off-script';

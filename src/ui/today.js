@@ -6,6 +6,7 @@ import { streakBlock } from './badges.js';
 import { wordPercent } from '../streak.js';
 import { duration, untilText } from '../plan.js';
 import { formatDay } from '../dates.js';
+import { sync } from '../reminders.js';
 
 export const SEGMENTS = [
   ['new', 'New'],
@@ -95,6 +96,7 @@ export function showToday(ctx) {
     const kept = await keptWalk(ctx);
     if (ctx.nav !== nav) return;
     ctx.refit();
+    sync(ctx);
     const plan = ctx.plan();
     const s = ctx.settings;
     const p = plan.progress;

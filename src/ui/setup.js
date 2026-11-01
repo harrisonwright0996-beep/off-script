@@ -81,7 +81,7 @@ export function showSetup(ctx, { step = 'welcome', reimport = false } = {}) {
         title: 'Off Script',
         body: [
           h('p', { class: 'lead' }, 'Learn the whole play, word for word and cue by cue.'),
-          h('p', {}, 'Your script stays on this phone. Nothing is sent anywhere.'),
+          h('p', {}, 'Your script stays on this phone. It is never sent anywhere.'),
           h('p', {}, 'Each day is planned for you. Just press Start sprint.'),
         ],
         footer: [button('Choose the script', () => choose(), { class: 'btn primary' })],

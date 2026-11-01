@@ -14,6 +14,7 @@ import { scienceNote } from '../science.js';
 import { hearCue, stopCue } from './hearcue.js';
 import { rewardCard } from './badges.js';
 import { addSeconds, CUE_MOST } from '../streak.js';
+import { sync } from '../reminders.js';
 
 const SAVED = 'sprint';
 export const PRACTICE = 'practice'; // a chosen practice, saved apart from the day's sprint
@@ -515,6 +516,7 @@ export async function showSprint(ctx, { scope = 'all', minutes = null, custom = 
 
   function plain(title, body, footer) {
     quiet();
+    sync(ctx);
     clear(ctx.root).append(screen({ title, back: act(stop), backLabel: 'Today', body: [rewardCard(ctx), ...body], footer }));
     focusHeading(ctx.root);
   }

@@ -1,0 +1,19 @@
+name = "off-script-reminders"
+main = "index.js"
+compatibility_date = "2026-10-01"
+workers_dev = true
+
+[triggers]
+crons = ["*/15 * * * *"]
+
+[vars]
+ORIGIN = "https://harrisonwright0996-beep.github.io"
+
+[[kv_namespaces]]
+binding = "KV"
+id = "faaf9972ad7f4e7a8ffeb1d3e353a52f"
+
+[[ratelimits]]
+name = "LIMIT"
+namespace_id = "7301"
+simple = { limit = 30, period = 60 }

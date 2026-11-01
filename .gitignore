@@ -12,6 +12,7 @@ voices.json
 
 # Local tools and test output
 node_modules/
+.wrangler/
 test-results/
 playwright-report/
 shots/

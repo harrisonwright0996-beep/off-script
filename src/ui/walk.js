@@ -12,6 +12,7 @@ import { duration } from '../plan.js';
 import { COACH_SPEECH } from '../coach.js';
 import { WALK_COUNTS } from '../streak.js';
 import { rewardCard } from './badges.js';
+import { sync } from '../reminders.js';
 
 const LENGTHS = [15, 30, 45, 60, 90];
 const DRAFT = 'walkDraft'; // what a walk heard, until it is saved or let go
@@ -446,6 +447,7 @@ export function showWalk(ctx) {
           await kept;
           await ctx.store.del(DRAFT);
           ctx.refit();
+          sync(ctx);
           const missed = rows.filter((r) => r.ticked).length;
           announce('Walk saved');
           page('Walk saved', [rewardCard(ctx), h('p', { class: 'lead' }, `${plural(rows.length, 'line')}, ${missed ? `${missed} to look at again` : 'all word perfect'}.`)], [
