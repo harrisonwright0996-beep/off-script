@@ -1,5 +1,5 @@
-// Read aloud with the phone's own voices (speech synthesis runs on the phone).
-// On iPhone it must start from a tap, and it stops when the screen locks.
+// Read aloud with the phone's own voices (speech synthesis runs on the phone). Network voices are left
+// out, so a line never leaves it. On iPhone it must start from a tap, and it stops when the screen locks.
 
 export const canSpeak = () => typeof speechSynthesis !== 'undefined' && typeof SpeechSynthesisUtterance !== 'undefined';
 
@@ -8,7 +8,7 @@ export function voices() {
   if (!canSpeak()) return [];
   const all = speechSynthesis.getVoices();
   if (all.length) cached = all;
-  const english = cached.filter((v) => /^en[-_]/i.test(v.lang));
+  const english = cached.filter((v) => v.localService && /^en[-_]/i.test(v.lang));
   const rank = (v) => (/^en[-_]GB/i.test(v.lang) ? 0 : /^en[-_](IE|AU|NZ)/i.test(v.lang) ? 1 : 2);
   return english.sort((a, b) => rank(a) - rank(b) || a.name.localeCompare(b.name));
 }

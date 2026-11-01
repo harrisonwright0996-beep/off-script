@@ -72,7 +72,7 @@ export function recallGate(events, { before = Infinity, k = 1 } = {}) {
     .filter((e) => e.time < before && e.mode !== 'walk' && e.prev && e.prev.status === 'review' && e.prev.stability && e.prev.lastTime && !e.relearn && !e.help && !e.primed)
     .sort((a, b) => a.time - b.time)
     .slice(-GATE.window);
-  const passes = checks.filter((e) => e.pass).length;
+  const passes = checks.filter((e) => e.pass && !e.misses).length;
   const expected = checks.reduce((n, e) => n + retrievability((e.time - e.prev.lastTime) / HOUR, k * e.prev.stability), 0);
   const shortfall = checks.length ? (expected - passes) / checks.length : 0;
   const cut = checks.length >= GATE.min ? GATE.slope * (shortfall - GATE.slack) : 0;
@@ -249,7 +249,7 @@ export function typingPace(events, byId) {
   const secs = [];
   for (let i = events.length - 1; i >= 0 && secs.length < PACE_KEPT; i--) {
     const e = events[i];
-    if (!e.pass || e.help || e.primed || e.relearn || e.slip) continue;
+    if (!e.pass || e.misses || e.help || e.primed || e.relearn || e.slip) continue;
     const sec = typedPerWord(e, byId.get(e.id));
     if (sec != null) secs.push(sec);
   }

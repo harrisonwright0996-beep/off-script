@@ -26,6 +26,7 @@ export function newState(id) {
     lastDay: null,
     lastTime: 0,
     lastMode: null,
+    closeWord: null, // the word out when it last passed with one word out (a token index)
   };
 }
 
@@ -36,7 +37,7 @@ const addDay = (days, day) => (days.includes(day) ? days : [...days, day]);
 // relearn: a go after missing the line earlier in the same sprint, which says little about memory, so
 // it does not grow it. primed: from the cue alone just after a go with the first letters, and slow:
 // typed right but much slower than usual; either grows memory by half as much.
-export function applyResult(state, { pass, day, time, mode, k = 1, pretest = false, relearn = false, primed = false, slow = false }) {
+export function applyResult(state, { pass, day, time, mode, k = 1, pretest = false, relearn = false, primed = false, slow = false, stall = false, closeWord = null }) {
   const s = { ...state };
   if (s.status === 'new') {
     s.status = 'learning';
@@ -55,7 +56,7 @@ export function applyResult(state, { pass, day, time, mode, k = 1, pretest = fal
   } else if (!pass) {
     s.lapses = (state.lapses || 0) + 1;
     s.stability = afterMiss(state.stability);
-  } else if (!relearn) {
+  } else if (!relearn && !stall) {
     const r = retrievability((time - state.lastTime) / HOUR, k * state.stability);
     const g = growth(state.stability, r, state.lapses || 0);
     s.stability = state.stability * (primed || slow ? 1 + (g - 1) * HELPED_GROWTH : g);
@@ -66,6 +67,7 @@ export function applyResult(state, { pass, day, time, mode, k = 1, pretest = fal
     s.learnedDay = day;
   }
   s.lastResult = pass ? 'pass' : 'miss';
+  s.closeWord = closeWord;
   s.lastDay = day;
   s.lastTime = time;
   s.lastMode = mode;
@@ -86,7 +88,7 @@ export function applyHelp(state, { day }) {
 // Never yet right, with or without the first letters: still to be taught.
 export const needsTeaching = (s) => s.passes === 0 && !s.helped;
 
-export const isWordPerfect = (s) => s.status === 'review' && s.lastResult === 'pass';
+export const isWordPerfect = (s) => s.status === 'review' && s.lastResult === 'pass' && s.closeWord == null;
 export const isMissed = (s) => s.status === 'review' && s.lastResult === 'miss';
 
 // Passed on 3 or more separate days after the day it was learned, and passed last time.
@@ -96,7 +98,7 @@ export const isSecure = (s) => isWordPerfect(s) && s.passDays.filter((d) => d > 
 export function category(s) {
   if (s.status === 'new') return 'new';
   if (s.status === 'learning') return 'learning';
-  return s.lastResult === 'miss' ? 'missed' : 'perfect';
+  return s.lastResult === 'miss' || s.closeWord != null ? 'missed' : 'perfect';
 }
 
 export const passedOn = (s, day) => s.passDays.includes(day);

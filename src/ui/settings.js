@@ -241,6 +241,8 @@ export function showSettings(ctx) {
           select('mode', 'Answer by', OPTIONS.mode),
           check('askSpeaker', 'Ask who speaks next'),
           check('autoAdvance', 'Move on by itself after a word perfect answer'),
+          check('closeLines', 'One word out still passes on a long line already learned'),
+          h('p', { class: 'help' }, 'Lines of 8 words or more. It shows the word to watch out for, and the line comes back sooner. Turn this off and every word counts.'),
           select('sprintMinutes', 'Sprint length', OPTIONS.sprintMinutes),
           select('breakMinutes', 'Break length', OPTIONS.breakMinutes),
         ),

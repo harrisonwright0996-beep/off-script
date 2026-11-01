@@ -61,7 +61,7 @@ export function readyAt(s, k = 1, target = TARGET) {
 export function fitFactor(events) {
   const obs = events
     .filter((e) => e.prev && e.prev.status === 'review' && e.prev.stability && e.prev.lastTime && e.mode !== 'walk' && !e.relearn && !e.help && !e.primed)
-    .map((e) => ({ t: (e.time - e.prev.lastTime) / HOUR, s: e.prev.stability, pass: e.pass }))
+    .map((e) => ({ t: (e.time - e.prev.lastTime) / HOUR, s: e.prev.stability, pass: e.pass && !e.misses })) // one word out is not word perfect
     .filter((o) => o.t >= 5 / 60)
     .slice(-500);
   if (obs.length < 30) return { k: 1, n: obs.length };

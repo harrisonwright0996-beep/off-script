@@ -386,6 +386,8 @@ export function createSession({ model, index, getPlan, getState, settings, scope
       const choices = settings.askSpeaker && item.askSpeaker ? speakerChoices(model, item, 6, byId) : [];
       c.askSpeaker = choices.length > 1;
       c.choices = c.askSpeaker ? choices : [];
+      // A line already learned: one word out of a long one still passes. Until then every word counts.
+      c.close = !!settings.closeLines && !t.ladder && !t.pretest && getState(item.id).status === 'review';
     }
     if (t.queue === 'beat' && t.kind === 'item' && !S.shuffleSaid) {
       S.message ||= SHUFFLE_MESSAGE;
@@ -478,9 +480,14 @@ export function createSession({ model, index, getPlan, getState, settings, scope
       const { k, typing } = plan();
       // Typed right from the cue alone, but more than twice as slowly a word as usual once under way.
       const perWord = typedPerWord(result, item);
-      const slow = result.pass && !help && !primed && !relearn && !result.slip && typing != null && perWord != null && perWord > SLOW * typing;
+      // A line right but for one word grows as little, so it comes back sooner.
+      const slow = result.pass && !help && !primed && !relearn && !result.slip && (result.misses.length > 0 || (typing != null && perWord != null && perWord > SLOW * typing));
+      // Right but for one word, the word it was last time too: a habit, not a slip. It still passes,
+      // but it does not grow, and the line comes back later with its letters.
+      const closeWord = result.pass && !help && !result.slip && result.misses.length === 1 ? result.misses[0] : null;
+      const habit = closeWord !== null && prev.closeWord === closeWord;
       const state =
-        help && result.pass ? applyHelp(prev, { day }) : applyResult(prev, { pass: result.pass, day, time, mode: result.mode, k, pretest, relearn, primed, slow });
+        help && result.pass ? applyHelp(prev, { day }) : applyResult(prev, { pass: result.pass, day, time, mode: result.mode, k, pretest, relearn, primed, slow, stall: habit, closeWord });
       const event = { time, day, id, pass: result.pass, mode: result.mode, queue, misses: result.misses.length, speakerWrong: !!result.speakerWrong, relearn, prev };
       if (help) event.help = true;
       if (primed) event.primed = true;
@@ -510,6 +517,10 @@ export function createSession({ model, index, getPlan, getState, settings, scope
         // A line being learned is asked again from its cue alone until it is learned, unless time is up.
         const more = !help && !S.closing && pooled(id) && state.status !== 'review';
         line.need = again ? 'help' : help || more ? 'clean' : 'done';
+        if (habit && !line.retold) {
+          line.retold = true;
+          line.need = 'help';
+        }
       } else {
         line.missed = true;
         line.clean = false;
@@ -517,7 +528,7 @@ export function createSession({ model, index, getPlan, getState, settings, scope
       }
       if (!help) {
         S.stats.answered += 1;
-        if (result.pass) S.stats.perfect += 1;
+        if (result.pass && !result.misses.length) S.stats.perfect += 1;
       }
       if (prev.status !== 'review' && state.status === 'review') {
         S.stats.learnedItems += 1;

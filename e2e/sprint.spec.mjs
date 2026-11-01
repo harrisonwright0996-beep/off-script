@@ -397,3 +397,53 @@ test('Just 2 minutes after a sprint stopped part way has its own time, with noth
   for (let i = 0; i < 4; i++) await answerCard(page);
   await expect(page.getByRole('heading', { name: 'Keep going?' })).toHaveCount(0);
 });
+
+test('one word out of a long line already learned: it passes, says the word to watch, and a slip of the finger can still count it whole', async ({ page }) => {
+  await importScript(page);
+  const { model } = fixtureModel();
+  const it = model.items.find((x) => x.words >= 8);
+  // Learned days ago and fading, so a sprint of checks asks it from the cue.
+  await page.evaluate(async (id) => {
+    const app = window.offScript;
+    const lastTime = Date.now() - 36 * 3600000;
+    const day = app.today();
+    const state = { ...app.getState(id), status: 'review', firstDay: '2026-10-20', learnedDay: '2026-10-20', passes: 8, stability: 24, lastResult: 'pass', lastDay: day, lastTime, passDays: ['2026-10-21', '2026-10-22', '2026-10-23'] };
+    app.states.set(id, state);
+  }, it.id);
+  await page.evaluate(() => window.offScript.go('sprint', { scope: 'tests', minutes: 2 }));
+  await expect(page.locator('.cue')).toBeVisible();
+  const asked = await page.evaluate(() => window.offScript.card.item.id);
+  expect(asked).toBe(it.id);
+  expect(await page.evaluate(() => window.offScript.card.close)).toBe(true);
+  const keys = await keysOf(page);
+  const card = await page.evaluate(() => ({ ask: !!window.offScript.card.askSpeaker, speaker: window.offScript.card.item.speaker }));
+  if (card.ask) await page.getByRole('group', { name: 'Who speaks next?' }).getByRole('button', { name: card.speaker, exact: true }).click();
+  // One wrong key, right beside the right one on the keypad.
+  const near = { a: 's', b: 'n', c: 'v', d: 'f', e: 'r', f: 'g', g: 'h', h: 'j', i: 'o', j: 'k', k: 'l', l: 'k', m: 'n', n: 'm', o: 'p', p: 'o', q: 'w', r: 't', s: 'd', t: 'y', u: 'i', v: 'b', w: 'e', x: 'c', y: 'u', z: 'x' };
+  await page.keyboard.type(near[keys[0]] + keys.slice(1));
+  await expect(page.locator('.result.perfect')).toHaveText(/Nearly word perfect\. Watch out for: /);
+  await expect(page.getByRole('button', { name: 'A slip of the finger? Count it right' })).toBeVisible();
+  expect(await page.evaluate((id) => window.offScript.getState(id).closeWord, it.id)).not.toBeNull();
+  await page.getByRole('button', { name: 'A slip of the finger? Count it right' }).click();
+  await expect(page.locator('.result.perfect')).toHaveText(/slip of the finger/);
+  expect(await page.evaluate((id) => window.offScript.getState(id).closeWord, it.id)).toBeNull();
+});
+
+test('with close lines off, one word out of a long line is a miss', async ({ page }) => {
+  await importScript(page);
+  const { model } = fixtureModel();
+  const it = model.items.find((x) => x.words >= 8);
+  await page.evaluate(async (id) => {
+    const app = window.offScript;
+    await app.saveSettings({ closeLines: false });
+    const state = { ...app.getState(id), status: 'review', firstDay: '2026-10-20', learnedDay: '2026-10-20', passes: 8, stability: 24, lastResult: 'pass', lastDay: app.today(), lastTime: Date.now() - 36 * 3600000, passDays: ['2026-10-21', '2026-10-22', '2026-10-23'] };
+    app.states.set(id, state);
+    app.go('sprint', { scope: 'tests', minutes: 2 });
+  }, it.id);
+  await expect(page.locator('.cue')).toBeVisible();
+  const keys = await keysOf(page);
+  const card = await page.evaluate(() => ({ ask: !!window.offScript.card.askSpeaker, speaker: window.offScript.card.item.speaker }));
+  if (card.ask) await page.getByRole('group', { name: 'Who speaks next?' }).getByRole('button', { name: card.speaker, exact: true }).click();
+  await page.keyboard.type((keys[0] === 'z' ? 'x' : 'z') + keys.slice(1));
+  await expect(page.locator('.result.misses')).toHaveText(/One miss: /);
+});

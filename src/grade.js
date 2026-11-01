@@ -61,10 +61,15 @@ export function sayMisses(tokens, tapped) {
   return [...tapped].filter((i) => tokens[i] && tokens[i].k !== null).sort((a, b) => a - b);
 }
 
+// A line this long, already learned, passes with one word out (a close line), if he keeps that on.
+export const CLOSE_WORDS = 8;
+
 // ms: from the answer starting (the keypad or Reveal on show) to the last key or Reveal. firstMs: to
-// the first key (Type). slip: counted right by him after a slip of the finger.
-export function makeResult({ misses, speakerWrong = false, mode, ms = null, firstMs = null, slip = false }) {
-  const result = { pass: misses.length === 0 && !speakerWrong, misses, speakerWrong, mode };
+// the first key (Type). slip: counted right by him after a slip of the finger. words: the line's
+// length where a close line can pass, otherwise 0.
+export function makeResult({ misses, speakerWrong = false, mode, ms = null, firstMs = null, slip = false, words = 0 }) {
+  const close = misses.length === 1 && words >= CLOSE_WORDS;
+  const result = { pass: (misses.length === 0 || close) && !speakerWrong, misses, speakerWrong, mode };
   if (ms != null) result.ms = ms;
   if (firstMs != null) result.firstMs = firstMs;
   if (slip) result.slip = true;
@@ -77,6 +82,7 @@ const bare = (d) => d.replace(/^[^\p{L}\p{N}]+|[^\p{L}\p{N}'’]+$/gu, '');
 // One plain sentence for the screen and for VoiceOver.
 export function describeResult(result, tokens, speaker) {
   const parts = [];
+  if (result.pass && result.misses.length) return `Nearly word perfect. Watch out for: ${bare(tokens[result.misses[0]].d)}`;
   if (result.pass) return 'Word perfect';
   if (result.speakerWrong) parts.push(`It was ${speaker}`);
   const n = result.misses.length;

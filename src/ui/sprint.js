@@ -368,7 +368,7 @@ export async function showSprint(ctx, { scope = 'all', minutes = null, custom = 
         // One or two wrong keys, each touching the right one, and nothing else wrong: he may say it
         // was only a slip of the finger.
         const slipped = !speakerWrong && check.misses.length <= 2 && check.misses.every((i) => check.slips.includes(i));
-        const result = makeResult({ misses: check.misses, speakerWrong, mode: 'type', ms: timed(answerStart), firstMs });
+        const result = makeResult({ misses: check.misses, speakerWrong, mode: 'type', ms: timed(answerStart), firstMs, words: c.close ? item.words : 0 });
         once(() => finish(c, result, { slipped }));
       });
       removeKeys = pad.remove;
@@ -378,7 +378,7 @@ export async function showSprint(ctx, { scope = 'all', minutes = null, custom = 
     }
 
     function sayAnswer() {
-      sayCheck(tokens, answerArea, footBox, 'Say it aloud, then reveal it.', (misses, ms) => finish(c, makeResult({ misses, speakerWrong, mode: 'say', ms })));
+      sayCheck(tokens, answerArea, footBox, 'Say it aloud, then reveal it.', (misses, ms) => finish(c, makeResult({ misses, speakerWrong, mode: 'say', ms, words: c.close ? item.words : 0 })));
     }
   }
 
@@ -397,7 +397,7 @@ export async function showSprint(ctx, { scope = 'all', minutes = null, custom = 
     const earlier = ctx.events.filter((e) => e !== rec.event);
     const trouble = result.pass ? null : troubleNote(c.item.tokens, repeatMisses(earlier, c.item.id, result.misses));
     announce([`${text}.`, trouble, note].filter(Boolean).join(' '));
-    feedback(c, result, text, note, slipped && !result.pass, trouble, rec);
+    feedback(c, result, text, note, slipped && result.misses.length > 0, trouble, rec);
   }
 
   // He says the wrong keys were only slips of the finger: the answer is taken back and saved as right.

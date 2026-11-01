@@ -8,6 +8,7 @@ export const DEFAULT_SETTINGS = {
   sprintMinutes: 12,
   breakMinutes: 3,
   autoAdvance: false,
+  closeLines: true, // one word out of a long line already learned still passes
   textSize: 100, // percent, 90 to 200
   lineSpacing: 1.5, // 1.5, 1.8 or 2
   letterSpacing: 'normal', // 'normal', 'wide' or 'wider'
