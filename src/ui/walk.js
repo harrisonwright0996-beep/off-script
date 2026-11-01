@@ -82,6 +82,15 @@ export function showWalk(ctx) {
     );
   }
 
+  // The coach unless it is turned off. A pack imported by an older version of the app came without
+  // its coach clips: a walk then plays as it did before there was a coach.
+  async function walkManifest() {
+    const pack = ctx.manifest || speechManifest(ctx.model);
+    const refs = Object.values(pack.coach || {});
+    const clips = ctx.manifest ? await ctx.store.getClips(refs.map((r) => r.file)) : null;
+    return ctx.settings.walkCoach && refs.every((r) => !clips || clips.has(r.file)) ? pack : { ...pack, coach: null };
+  }
+
   async function build(minutes) {
     length = minutes;
     const nav = ctx.nav;
@@ -90,8 +99,8 @@ export function showWalk(ctx) {
     if (ctx.nav !== nav) return;
     ctx.refit();
     const plan = ctx.plan();
-    const pack = ctx.manifest || speechManifest(ctx.model);
-    const manifest = ctx.settings.walkCoach ? pack : { ...pack, coach: null };
+    const manifest = await walkManifest();
+    if (ctx.nav !== nav) return;
     const tape = buildWalk({
       model: ctx.model,
       index: ctx.index,

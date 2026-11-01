@@ -6,17 +6,15 @@ export const COACH = {
   sayBack: 'Now you. Say it back.',
   again: 'Once more.',
   turn: 'Your turn. Say your line.',
-  turnShort: 'Your turn.',
   here: 'Here it is.',
   run: 'Now run those lines. Say each one when it is your turn.',
-  end: 'That is the walk. Look at your phone, and tick any you missed.',
+  end: 'That is the walk. When you have stopped, look at your phone and tick any you missed.',
 };
 
 // With no audio pack the phone reads the tape, and marking is by the buttons on the screen.
 export const COACH_SPEECH = {
   ...COACH,
   intro: 'Here is your walk. Say your lines aloud. If you get a line wrong, or you are not sure, tap Missed. That brings it back.',
-  end: 'That is the walk. When you have stopped, look at your phone and tick any you missed.',
 };
 
 export const STEPS = {

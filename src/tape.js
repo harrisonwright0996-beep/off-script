@@ -16,7 +16,7 @@ import { beatStage, extraRunsOf, phaseOf, readyLines, testsOf, REVIEW_BURST } fr
 import { dayKey } from './dates.js';
 import { STEPS } from './coach.js';
 
-// How many times in a tape the coach gives the full words before it keeps to the short ones, or none.
+// How many times in a tape the coach says each thing.
 export const COACH_FULL = 3;
 
 export const GAP_FACTOR = { shorter: 0.75, normal: 1, longer: 1.4 };
@@ -88,12 +88,11 @@ export function buildWalk({ model, index, manifest, getState, settings, plan, st
   const told = {};
   let said = 0; // where the last line heard began: the cue of the line after it
   const step = (key) => guide.push({ label: STEPS[key], start: t });
-  // The full words for the first few times in a tape, then the short ones (or none).
-  const prompt = (key, short = null) => {
+  // Said the first few times in a tape, then on the screen only: a walk's time is for the lines.
+  const prompt = (key) => {
     told[key] = (told[key] || 0) + 1;
     step(key);
     if (told[key] <= COACH_FULL) says(key);
-    else if (short) says(short);
   };
   const answer = (it) => {
     said = t;
@@ -103,7 +102,7 @@ export function buildWalk({ model, index, manifest, getState, settings, plan, st
   };
   const recall = (it, queue, replayFrom) => {
     const begin = t;
-    prompt('turn', 'turnShort');
+    prompt('turn');
     silence(gapSeconds(it.words, gap));
     prompt('here');
     answer(it);

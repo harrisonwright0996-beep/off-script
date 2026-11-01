@@ -7,6 +7,7 @@ import { silentMp3, buildFixturePack } from './fixtures/audio-pack.mjs';
 import { fakeApp, learn } from './helpers.mjs';
 import { newState } from '../src/state.js';
 import { strToU8, zipSync } from '../vendor/fflate.js';
+import { COACH } from '../src/coach.js';
 
 test('frame headers: MPEG 2 Layer III, 22,050 Hz, mono, 32 kbps is 104 bytes, 105 with padding', () => {
   const h = frameHeader(new Uint8Array([0xff, 0xf3, 0x40, 0xc4]), 0);
@@ -41,6 +42,14 @@ test('audio pack: reads, checks clips, and reports fit with the script', () => {
   assert.deepEqual(packFit(partial, app.model), { sameScript: true, have: 20, missing: 3 });
   assert.throws(() => readAudioPack(strToU8('nope')), (e) => e instanceof PackError && e.code === 'not-zip');
   assert.throws(() => readAudioPack(zipSync({ 'a.txt': strToU8('x') })), (e) => e.code === 'no-manifest');
+});
+
+test('audio pack: the coach clips are read with the rest, and a pack without them still reads', () => {
+  const app = fakeApp();
+  const { manifest, clips } = readAudioPack(buildFixturePack(app.model, { coach: true }));
+  assert.equal(Object.keys(manifest.coach).length, Object.keys(COACH).length);
+  for (const ref of Object.values(manifest.coach)) assert.ok(clips.has(ref.file), ref.file);
+  assert.equal(readAudioPack(buildFixturePack(app.model)).manifest.coach, undefined);
 });
 
 function walkApp() {

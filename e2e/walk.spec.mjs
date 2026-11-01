@@ -243,3 +243,33 @@ test('the spoken coach can be turned off in Settings; the steps stay on the scre
   expect(await coach()).toBe(0);
   expect(await page.evaluate(() => window.offScript.walk.tape.guide.length)).toBeGreaterThan(0);
 });
+
+test('a pack with the coach: the tape says what to do, in clips that are there to play', async ({ page }) => {
+  await importScript(page);
+  await importPack(page, { coach: true });
+  await page.getByRole('button', { name: 'Walk' }).click();
+  await page.getByRole('button', { name: '15 minutes', exact: true }).click();
+  await page.waitForFunction(() => window.offScript.walk && window.offScript.walk.player.audio.readyState >= 3, null, { timeout: 15000 });
+  const said = await page.evaluate(() => window.offScript.walk.tape.steps.filter((s) => s.clip && s.clip.startsWith('coach-')).length);
+  expect(said).toBeGreaterThan(5);
+  await expect(page.getByText('Some of the audio is missing', { exact: false })).toHaveCount(0);
+});
+
+test('a pack that an older version imported has no coach clips: the walk plays without them, in the pack\'s voice', async ({ page }) => {
+  await importScript(page);
+  await importPack(page, { coach: true });
+  await page.evaluate(() => {
+    const o = window.offScript;
+    const real = o.store.getClips;
+    o.store.getClips = async (names) => {
+      const got = await real(names);
+      for (const name of names) if (name.startsWith('coach-')) got.delete(name);
+      return got;
+    };
+  });
+  await page.getByRole('button', { name: 'Walk' }).click();
+  await page.getByRole('button', { name: '15 minutes', exact: true }).click();
+  await page.waitForFunction(() => window.offScript.walk && window.offScript.walk.player && window.offScript.walk.player.audio.readyState >= 3, null, { timeout: 15000 });
+  await expect(page.getByText('Some of the audio is missing', { exact: false })).toHaveCount(0);
+  expect(await page.evaluate(() => window.offScript.walk.tape.steps.filter((s) => s.clip && s.clip.startsWith('coach-')).length)).toBe(0);
+});

@@ -37,13 +37,12 @@ test('a new line: listen, its line, say it back, once more, its line, say it bac
   assert.equal(list[list.length - 1], 'coach-end');
 });
 
-test('the coach gives the full words three times in a tape, then keeps to the short ones or none', () => {
+test('the coach says each thing three times in a tape, then leaves the time to the lines', () => {
   const app = fakeApp();
   const tape = walk(app, manifestOf(app.model), 1800);
   const list = files(tape);
   const count = (key) => list.filter((f) => f === `coach-${key}`).length;
   for (const key of ['turn', 'here', 'listen', 'again']) assert.equal(count(key), 3, key);
-  assert.ok(count('turnShort') > 0);
   assert.ok(count('run') <= 3);
   const i = tape.steps.findIndex((s) => s.clip === 'coach-turn');
   assert.ok(tape.steps[i + 1].silence > 0);

@@ -59,9 +59,9 @@ export async function importScript(page, url) {
 }
 
 // From Today: imports the invented play's audio pack in Settings, then back to Today.
-export async function importPack(page) {
+export async function importPack(page, options = {}) {
   await page.getByRole('button', { name: 'Settings' }).click();
-  const zip = Buffer.from(buildFixturePack(fixtureModel().model));
+  const zip = Buffer.from(buildFixturePack(fixtureModel().model, options));
   await chooseFile(page, 'Import audio pack', { name: 'Off Script audio pack 26 October.zip', mimeType: 'application/zip', buffer: zip });
   await expect(page.getByText('Audio pack: every line has audio', { exact: false })).toBeVisible();
   await page.getByRole('button', { name: 'Back', exact: true }).click();

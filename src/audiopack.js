@@ -1,5 +1,6 @@
 // Reads the audio pack zip made on the laptop by tools/render-audio.mjs:
-// manifest.json plus one MP3 per line, cue, speaker name and scene heading, and a silence unit.
+// manifest.json plus one MP3 per line, cue, speaker name, scene heading and coach prompt, and a silence
+// unit. Packs from before the coach have no prompts, and work as they always did.
 import { unzipSync, strFromU8 } from '../vendor/fflate.js';
 import { parseMp3 } from './mp3.js';
 
@@ -17,6 +18,7 @@ const refs = (m) => [
   ...Object.values(m.items).flatMap((x) => [x.line, x.cue].filter(Boolean)),
   ...Object.values(m.speakers),
   ...Object.values(m.headings),
+  ...Object.values(m.coach || {}),
 ];
 
 export function readAudioPack(bytes) {

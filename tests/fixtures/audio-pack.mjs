@@ -3,6 +3,7 @@
 import { zipSync, strToU8 } from '../../vendor/fflate.js';
 import { concatBytes } from '../../src/mp3.js';
 import { fnv1a } from '../../src/items.js';
+import { COACH } from '../../src/coach.js';
 
 export function silentMp3(frames) {
   const parts = [];
@@ -14,7 +15,7 @@ export function silentMp3(frames) {
   return concatBytes(parts);
 }
 
-export function buildFixturePack(model, { skip = 0 } = {}) {
+export function buildFixturePack(model, { skip = 0, coach = false } = {}) {
   const files = {};
   const clip = (name, frames) => {
     files[name] = silentMp3(frames);
@@ -26,6 +27,7 @@ export function buildFixturePack(model, { skip = 0 } = {}) {
   });
   for (const sp of new Set(model.items.map((i) => i.speaker))) manifest.speakers[sp] = clip(`p-${fnv1a(sp)}.mp3`, 15);
   for (const sc of model.scenes) manifest.headings[sc.index] = clip(`h-${sc.index}.mp3`, 25);
+  if (coach) manifest.coach = Object.fromEntries(Object.keys(COACH).map((key) => [key, clip(`coach-${key}.mp3`, 30)]));
   files['manifest.json'] = strToU8(JSON.stringify(manifest));
   return zipSync(files, { level: 0 });
 }
