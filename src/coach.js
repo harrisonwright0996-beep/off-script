@@ -8,6 +8,7 @@ export const COACH = {
   turn: 'Your turn. Say your line.',
   here: 'Here it is.',
   run: 'Now run those lines. Say each one when it is your turn.',
+  stage: 'Stage direction.',
   end: 'That is the walk. When you have stopped, look at your phone and tick any you missed.',
 };
 
@@ -24,6 +25,7 @@ export const STEPS = {
   turn: 'Your turn: say your line',
   here: 'Check: did you get it right?',
   run: 'Now run those lines',
+  stage: 'Stage direction',
   cue: 'Listen for your cue',
   end: 'That is the walk',
 };

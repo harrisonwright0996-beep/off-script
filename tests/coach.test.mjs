@@ -1,19 +1,20 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { fakeApp, fixtureModel, learn } from './helpers.mjs';
-import { buildWalk, markedLines, markTrial, partAt, replayPoint, resumePoint, reviewRows, trialAt, walkRecords, walkResults } from '../src/tape.js';
+import { buildWalk, markedLines, markTrial, noteKey, partAt, replayPoint, resumePoint, reviewRows, spokenNote, trialAt, walkRecords, walkResults } from '../src/tape.js';
 import { COACH, COACH_SPEECH, STEPS } from '../src/coach.js';
 import { createPlayer } from '../src/player.js';
 import { clipTexts, speechManifest } from '../src/ui/walk.js';
 import { newState, needsTeaching } from '../src/state.js';
 
 const clipRef = (file, duration = 1) => ({ file, duration });
-function manifestOf(model, { coach = true } = {}) {
+function manifestOf(model, { coach = true, notes = false } = {}) {
   const items = {};
   for (const it of model.items) items[it.id] = { line: clipRef(`l-${it.id}`), cue: it.cue.speaker === null ? null : clipRef(`c-${it.id}`) };
   const m = { silence: clipRef('s', 0.25), items, speakers: {}, headings: Object.fromEntries(model.scenes.map((s) => [s.index, clipRef(`h-${s.index}`)])) };
   for (const it of model.items) m.speakers[it.speaker] = clipRef(`p-${it.speaker}`);
   if (coach) m.coach = Object.fromEntries(Object.keys(COACH).map((k) => [k, clipRef(`coach-${k}`)]));
+  if (notes) m.notes = Object.fromEntries(model.items.flatMap((it) => it.cue.notes.map((n) => [noteKey(n), clipRef(`n-${noteKey(n)}`)])));
   return m;
 }
 
@@ -218,4 +219,53 @@ test('a walk kept from days ago changes nothing on a line answered since, and a 
   const states = { a: later, b: fresh, c: done };
   const records = walkRecords([{ id: 'a', pass: false, at: 1, queue: 'run' }, { id: 'b', pass: true, at: 2, queue: 'run' }, { id: 'c', pass: true, at: 3, queue: 'run' }], { start: 1000, getState: (id) => states[id] });
   assert.deepEqual(records.map((r) => r.event.id), ['b']);
+});
+
+test('a stage direction before a line is read with it when it is taught and on its first run, and nowhere else', () => {
+  const app = fakeApp();
+  const it = app.model.items.find((x) => x.cue.notes.length && !x.cue.notes.some((n) => /^\[?Scene/.test(n)));
+  assert.ok(it, 'the invented play has directions');
+  const tape = walk(app, manifestOf(app.model, { notes: true }), 3600);
+  const note = `n-${noteKey(it.cue.notes[0])}`;
+  const list = files(tape);
+  const times = list.filter((f) => f === note).length;
+  assert.ok(times >= 2 && times <= 4, `heard ${times} times`);
+  const at = list.indexOf(note);
+  assert.ok(at > 0);
+});
+
+test('the coach says Stage direction three times in a tape, then the direction alone', () => {
+  const app = fakeApp();
+  const list = files(walk(app, manifestOf(app.model, { notes: true }), 3600));
+  assert.equal(list.filter((f) => f === 'coach-stage').length, 3);
+  const notes = list.filter((f) => f.startsWith('n-')).length;
+  assert.ok(notes > 3);
+});
+
+test('a tape with no directions in its pack is as it was', () => {
+  const app = fakeApp();
+  const a = files(walk(app, manifestOf(app.model)));
+  assert.ok(!a.some((f) => f.startsWith('n-') || f === 'coach-stage'));
+});
+
+test('the screen says Stage direction, then goes back to listening for the line', () => {
+  const app = fakeApp();
+  const tape = walk(app, manifestOf(app.model, { notes: true }), 3600);
+  const at = tape.guide.findIndex((g) => g.label === STEPS.stage);
+  assert.ok(at >= 0);
+  assert.equal(tape.guide.slice(at + 1).find((g) => g.label !== STEPS.stage).label, STEPS.listen);
+});
+
+test('a direction is read aloud without its brackets', () => {
+  assert.equal(spokenNote('[She reads it.]'), 'She reads it.');
+  assert.equal(spokenNote('[On screen, Phone: where are you?]'), 'On screen, Phone: where are you?');
+});
+
+test('with no pack the phone reads the directions too', () => {
+  const { model } = fixtureModel();
+  const m = speechManifest(model);
+  const it = model.items.find((x) => x.cue.notes.length);
+  const ref = m.notes[noteKey(it.cue.notes[0])];
+  assert.ok(ref);
+  assert.equal(clipTexts(m, model).get(ref.file), spokenNote(it.cue.notes[0]));
 });

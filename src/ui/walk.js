@@ -4,7 +4,7 @@
 // the screen kept on, and two big buttons do the marking. Afterwards he checks the list, and the
 // results are saved at the moments they were heard.
 import { h, clear, screen, button, announce, focusHeading, plural, settled } from './dom.js';
-import { buildWalk, markTrial, markedLines, partAt, replayPoint, resumePoint, reviewRows, walkResults, walkRecords } from '../tape.js';
+import { buildWalk, markTrial, noteKey, spokenNote, markedLines, partAt, replayPoint, resumePoint, reviewRows, walkResults, walkRecords } from '../tape.js';
 import { tapeBlob, createPlayer, keepScreenOn } from '../player.js';
 import { canSpeak, speak, stopSpeaking } from '../tts.js';
 import { tokenize, keyedCount, joinTokens } from '../tokens.js';
@@ -31,7 +31,9 @@ export function speechManifest(model) {
   const headings = {};
   model.scenes.forEach((sc) => (headings[sc.index] = clip(`heading:${sc.index}`, sc.heading)));
   const coach = Object.fromEntries(Object.entries(COACH_SPEECH).map(([key, text]) => [key, clip(`coach:${key}`, text)]));
-  return { version: 1, scriptHash: model.hash, silence: { file: 'silence', duration: 0.25 }, items, speakers, headings, coach };
+  const notes = {};
+  for (const it of model.items) for (const n of it.cue.notes) notes[noteKey(n)] = clip(`note:${noteKey(n)}`, spokenNote(n));
+  return { version: 1, scriptHash: model.hash, silence: { file: 'silence', duration: 0.25 }, items, speakers, headings, coach, notes };
 }
 
 // What each clip in a manifest says, so any tape can also be read aloud.
@@ -46,6 +48,7 @@ export function clipTexts(manifest, model) {
   for (const [name, ref] of Object.entries(manifest.speakers)) texts.set(ref.file, name);
   for (const [i, ref] of Object.entries(manifest.headings)) if (model.scenes[i]) texts.set(ref.file, model.scenes[i].heading);
   for (const [key, ref] of Object.entries(manifest.coach || {})) texts.set(ref.file, COACH_SPEECH[key]);
+  for (const it of model.items) for (const n of it.cue.notes) if (manifest.notes && manifest.notes[noteKey(n)]) texts.set(manifest.notes[noteKey(n)].file, spokenNote(n));
   return texts;
 }
 
@@ -84,13 +87,15 @@ export function showWalk(ctx) {
     );
   }
 
-  // The coach unless it is turned off. A pack imported by an older version of the app came without
-  // its coach clips: a walk then plays as it did before there was a coach.
+  // The coach and the stage directions unless they are turned off. A pack imported by an older version
+  // of the app came without those clips: a walk then plays as it did before there were any.
   async function walkManifest() {
     const pack = ctx.manifest || speechManifest(ctx.model);
-    const refs = Object.values(pack.coach || {});
-    const clips = ctx.manifest ? await ctx.store.getClips(refs.map((r) => r.file)) : null;
-    return ctx.settings.walkCoach && refs.every((r) => !clips || clips.has(r.file)) ? pack : { ...pack, coach: null };
+    const coach = Object.values(pack.coach || {});
+    const notes = Object.values(pack.notes || {});
+    const clips = ctx.manifest ? await ctx.store.getClips([...coach, ...notes].map((r) => r.file)) : null;
+    const have = (refs) => refs.every((r) => !clips || clips.has(r.file));
+    return { ...pack, coach: ctx.settings.walkCoach && have(coach) ? pack.coach : null, notes: ctx.settings.walkDirections && have(notes) ? pack.notes : null };
   }
 
   async function build(minutes) {

@@ -9,15 +9,21 @@
 // teaches one: each line heard twice, with a gap to say it back, then the beat run from its cue, the
 // first time its lines are asked for; its second run comes after the next beat's first. A beat part
 // learned hears only the lines still to be taught, as a sprint teaches only those, and is run whole.
+// A line's stage directions are read with it when it is taught and on its first run.
 // While building, it assumes every recall is right; the real results are saved after the walk, at
 // the moments they were heard.
 import { applyResult, needsTeaching } from './state.js';
 import { beatStage, extraRunsOf, phaseOf, readyLines, testsOf, REVIEW_BURST } from './plan.js';
 import { dayKey } from './dates.js';
+import { fnv1a } from './items.js';
 import { STEPS } from './coach.js';
 
 // How many times in a tape the coach says each thing.
 export const COACH_FULL = 3;
+
+// The key of a stage direction's clip in a pack, and how it is read aloud: without its brackets.
+export const noteKey = (note) => fnv1a(note);
+export const spokenNote = (note) => note.replace(/[[\]]/g, '');
 
 export const GAP_FACTOR = { shorter: 0.75, normal: 1, longer: 1.4 };
 // How long after a line is taught a tap still means that line.
@@ -94,6 +100,15 @@ export function buildWalk({ model, index, manifest, getState, settings, plan, st
     step(key);
     if (told[key] <= COACH_FULL) says(key);
   };
+  // The script's own direction, where the line has one.
+  const directions = (it) => {
+    for (const note of it.cue.notes || []) {
+      const ref = manifest.notes && manifest.notes[noteKey(note)];
+      if (!ref) continue;
+      prompt('stage');
+      clip(ref);
+    }
+  };
   const answer = (it) => {
     said = t;
     const name = manifest.speakers[it.speaker];
@@ -119,7 +134,7 @@ export function buildWalk({ model, index, manifest, getState, settings, plan, st
   const heading = (scene) => model.scenes[scene].heading;
 
   // A run of lines in script order: a cue only where the tape enters the scene.
-  const sequence = (ids, queue, cueEvery, whole = false) => {
+  const sequence = (ids, queue, cueEvery, whole = false, staged = false) => {
     let prev = null;
     for (const id of ids) {
       if (full() && !whole) return;
@@ -134,6 +149,7 @@ export function buildWalk({ model, index, manifest, getState, settings, plan, st
         step('cue');
         cue(it);
       }
+      if (staged) directions(it);
       recall(it, queue, from);
       prev = it;
     }
@@ -179,6 +195,8 @@ export function buildWalk({ model, index, manifest, getState, settings, plan, st
       const begin = t;
       prompt('listen');
       if (!prev || prev.index !== it.index - 1 || prev.scene !== it.scene) cue(it, false);
+      directions(it);
+      step('listen');
       heard.push({ id, at: t });
       answer(it);
       prompt('sayBack');
@@ -192,7 +210,7 @@ export function buildWalk({ model, index, manifest, getState, settings, plan, st
     }
     const from = t;
     if (teaching.length > mark.teaching) prompt('run');
-    sequence(ids, 'beat', false, true);
+    sequence(ids, 'beat', false, true, true);
     const sec = t - from;
     if (t + sec + (pending ? pending.sec : 0) > seconds && (mark.trials > 0 || ids.length > 1)) {
       steps.length = mark.steps;

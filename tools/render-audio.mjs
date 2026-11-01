@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // Makes the Walk audio pack on the laptop (macOS): every line, cue, speaker name, scene heading and
-// coach prompt spoken by the Mac's own voices (say), encoded as constant bit rate MP3 (LAME) so the phone can
+// coach prompt and stage direction spoken by the Mac's own voices (say), encoded as constant bit rate MP3 (LAME) so the phone can
 // join clips byte for byte. It reads the script with the same code as the app, so ids match.
 //
 //   node tools/render-audio.mjs --script <script.docx> --out <folder> [--jobs 8]
@@ -22,6 +22,7 @@ import { speakable } from '../src/tts.js';
 import { parseMp3 } from '../src/mp3.js';
 import { PACK_VERSION } from '../src/audiopack.js';
 import { COACH } from '../src/coach.js';
+import { noteKey, spokenNote } from '../src/tape.js';
 import { zipSync } from '../vendor/fflate.js';
 
 const run = promisify(execFile);
@@ -248,6 +249,13 @@ export async function main(argv) {
   for (const sc of model.scenes) headings[sc.index] = clip(`h-${sc.index}.mp3`, voices.narrator, speakable(sc.heading));
   const coach = {};
   for (const [key, text] of Object.entries(COACH)) coach[key] = clip(`coach-${key}.mp3`, voices.narrator, text);
+  const notes = {};
+  for (const it of model.items) {
+    for (const n of it.cue.notes) {
+      const words = speakable(spokenNote(n));
+      if (words) notes[noteKey(n)] ||= clip(`n-${noteKey(n)}.mp3`, voices.narrator, words);
+    }
+  }
 
   const files = {};
   let cachedCount = 0;
@@ -284,6 +292,7 @@ export async function main(argv) {
     speakers: Object.fromEntries(Object.entries(names).map(([sp, j]) => [sp, ref(j)])),
     headings: Object.fromEntries(Object.entries(headings).map(([i, j]) => [i, ref(j)])),
     coach: Object.fromEntries(Object.entries(coach).map(([key, j]) => [key, ref(j)])),
+    notes: Object.fromEntries(Object.entries(notes).map(([key, j]) => [key, ref(j)])),
   };
   files['manifest.json'] = new TextEncoder().encode(JSON.stringify(manifest));
   const zip = zipSync(files, { level: 0 });

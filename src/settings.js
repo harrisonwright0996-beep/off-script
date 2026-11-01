@@ -16,6 +16,7 @@ export const DEFAULT_SETTINGS = {
   theme: 'cream', // 'cream', 'light', 'dark' or 'auto'
   walkGap: 'normal', // 'shorter', 'normal' or 'longer'
   walkCoach: true, // the spoken coach on walks
+  walkDirections: true, // stage directions read on walks
   showPercent: true, // the % on Today
   showStreaks: true, // streaks and badges
   oneButton: true, // Today has one main button, with the rest under More

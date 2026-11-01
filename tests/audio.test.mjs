@@ -44,6 +44,14 @@ test('audio pack: reads, checks clips, and reports fit with the script', () => {
   assert.throws(() => readAudioPack(zipSync({ 'a.txt': strToU8('x') })), (e) => e.code === 'no-manifest');
 });
 
+test('audio pack: the stage direction clips are read with the rest, and a pack without them still reads', () => {
+  const app = fakeApp();
+  const { manifest, clips } = readAudioPack(buildFixturePack(app.model, { notes: true }));
+  assert.ok(Object.keys(manifest.notes).length > 0);
+  for (const ref of Object.values(manifest.notes)) assert.ok(clips.has(ref.file), ref.file);
+  assert.equal(readAudioPack(buildFixturePack(app.model)).manifest.notes, undefined);
+});
+
 test('audio pack: the coach clips are read with the rest, and a pack without them still reads', () => {
   const app = fakeApp();
   const { manifest, clips } = readAudioPack(buildFixturePack(app.model, { coach: true }));
