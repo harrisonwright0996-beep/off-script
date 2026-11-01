@@ -127,3 +127,13 @@ export async function seedOnce(page, id) {
   }, id);
   await page.waitForFunction(() => window.offScript.card && window.offScript.card.step === 'help');
 }
+
+// Words the page should never show. A null or undefined handed to the DOM's own append comes out as
+// that word, loose in its box, where getByText cannot see it.
+export const strayWords = (page) =>
+  page.evaluate(() => {
+    const walk = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+    const words = [];
+    while (walk.nextNode()) if (/^(null|undefined|NaN)$/.test(walk.currentNode.data.trim())) words.push(walk.currentNode.data.trim());
+    return words;
+  });

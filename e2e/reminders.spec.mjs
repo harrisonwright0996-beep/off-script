@@ -1,6 +1,6 @@
 // Reminders: what the phone tells the worker, and that it tells it nothing until they are on.
 import { readFileSync } from 'node:fs';
-import { test, expect, importScript, answerCard } from './helpers.mjs';
+import { test, expect, importScript, answerCard, strayWords } from './helpers.mjs';
 
 // A phone that can have reminders, and a worker that keeps a note of what it is told.
 function fakePush() {
@@ -41,7 +41,7 @@ test('Settings says what reminders do, and how to turn them off', async ({ page 
   await remindersOn(page);
   await page.getByRole('heading', { name: 'Reminders' }).scrollIntoViewIfNeeded();
   await expect(page.getByRole('button', { name: 'Turn reminders off' })).toBeVisible();
-  await expect(page.getByText('null', { exact: true })).toHaveCount(0);
+  expect(await strayWords(page)).toEqual([]);
   await expect(page.getByText('If today’s plan is not done, a nudge comes about 3 hours after you last used the app')).toBeVisible();
   await page.screenshot({ path: `shots/${info.project.name}-reminders-on.png` });
 });

@@ -1,6 +1,6 @@
 // Accessibility: axe on every screen, in every theme. No serious or critical problems allowed.
 import { createRequire } from 'node:module';
-import { test, expect, importScript, answerCard, keysOf, seedOnce } from './helpers.mjs';
+import { test, expect, importScript, answerCard, keysOf, seedOnce, strayWords } from './helpers.mjs';
 
 const AXE = createRequire(import.meta.url).resolve('axe-core/axe.min.js');
 test.use({ bypassCSP: true }); // only so axe itself can be added to the page
@@ -13,6 +13,7 @@ async function check(page, where, found) {
   for (const v of result.violations) {
     found.push({ where, id: v.id, impact: v.impact, help: v.help, nodes: v.nodes.slice(0, 3).map((n) => n.target.join(' ')) });
   }
+  for (const word of await strayWords(page)) found.push({ where, id: 'stray word', help: word });
 }
 
 for (const theme of ['cream', 'light', 'dark']) {
