@@ -173,3 +173,19 @@ test('reading aloud lists only voices on the phone: a line never leaves it', asy
   delete globalThis.speechSynthesis;
   delete globalThis.SpeechSynthesisUtterance;
 });
+
+test('a science note is different each sprint, and comes round again', async () => {
+  const { SCIENCE, scienceNote } = await import('../src/science.js');
+  assert.notEqual(scienceNote(0), scienceNote(1));
+  assert.equal(scienceNote(SCIENCE.length), scienceNote(0));
+  for (const note of SCIENCE) assert.ok(!/[-–—]/.test(note), 'no dashes');
+});
+
+test('a line known before teaching is learned, and comes back as a check', async () => {
+  const { applyKnown } = await import('../src/state.js');
+  const s = applyKnown(newState('x'), { day: '2026-11-02', time: 1000 });
+  assert.equal(s.status, 'review');
+  assert.equal(s.stability, 4);
+  assert.equal(isWordPerfect(s), true);
+  assert.equal(isWordPerfect(applyKnown(newState('x'), { day: '2026-11-02', time: 1000, closeWord: 3 })), false);
+});

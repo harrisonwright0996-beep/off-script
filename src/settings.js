@@ -9,6 +9,7 @@ export const DEFAULT_SETTINGS = {
   breakMinutes: 3,
   autoAdvance: false,
   closeLines: true, // one word out of a long line already learned still passes
+  scienceNotes: true, // a note on why it works after a sprint
   textSize: 100, // percent, 90 to 200
   lineSpacing: 1.5, // 1.5, 1.8 or 2
   letterSpacing: 'normal', // 'normal', 'wide' or 'wider'
@@ -17,6 +18,7 @@ export const DEFAULT_SETTINGS = {
   walkCoach: true, // the spoken coach on walks
   showPercent: true, // the % on Today
   showStreaks: true, // streaks and badges
+  oneButton: true, // Today has one main button, with the rest under More
   voiceURI: null,
   rate: 1,
   focusScene: null, // "Learn this scene next"

@@ -30,7 +30,23 @@ for (const theme of ['cream', 'light', 'dark']) {
       return o.go('badges');
     });
     await check(page, 'badges', found);
-    await page.evaluate(() => window.offScript.go('today'));
+    await page.evaluate(async () => {
+      await window.offScript.saveSettings({ oneButton: true });
+      await window.offScript.go('today');
+    });
+    await check(page, 'today, one main button', found);
+    await page.evaluate(() => window.offScript.go('more'));
+    await check(page, 'more', found);
+    await page.evaluate(() => window.offScript.go('checkin'));
+    await check(page, 'already know some', found);
+    await page.getByRole('button', { name: 'Yes, check what I know' }).click();
+    await check(page, 'already know some: a line', found);
+    await page.keyboard.type('zz');
+    await check(page, 'already know some: typing', found);
+    await page.evaluate(async () => {
+      await window.offScript.saveSettings({ oneButton: false });
+      await window.offScript.go('today');
+    });
 
     // The second line's cue made longer, as uniqueCues does for a cue that leads to more than one line
     // (the invented play has none), so a long cue is checked too.

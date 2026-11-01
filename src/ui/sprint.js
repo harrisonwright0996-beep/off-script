@@ -9,7 +9,8 @@ import { createTypeCheck, sayMisses, makeResult, describeResult, repeatMisses, t
 import { blankOf, firstLettersOf, gapsOf, lettersShown } from '../tokens.js';
 import { canSpeak, speak } from '../tts.js';
 import { untilText } from '../plan.js';
-import { keypad } from './keypad.js';
+import { keypad, TYPE_HINT } from './keypad.js';
+import { scienceNote } from '../science.js';
 import { hearCue, stopCue } from './hearcue.js';
 import { rewardCard } from './badges.js';
 
@@ -55,6 +56,27 @@ export function gapsView(tokens, gaps) {
   return out;
 }
 
+// The page scrolls behind the bar and the footer (the keypad, or the buttons), so a long cue and a
+// long line can push the line being answered out of sight. Scrolls down just enough to show `el`
+// above the footer, keeping its top below the bar.
+export function keepInView(root, el) {
+  if (!el || !el.isConnected) return;
+  const bar = root.querySelector('.bar');
+  const foot = root.querySelector('footer');
+  const top = bar ? bar.getBoundingClientRect().bottom : 0;
+  const bottom = foot ? foot.getBoundingClientRect().top : window.innerHeight;
+  const r = el.getBoundingClientRect();
+  const by = Math.min(r.bottom + 8 - bottom, r.top - 8 - top);
+  if (by > 0) window.scrollBy(0, by);
+}
+
+// The cue on a card, with its button to hear it.
+export function cueBlock(ctx, item, cue) {
+  const say = (l) => (l.speaker === null ? h('p', {}, `Start of ${l.text}`) : h('p', {}, h('strong', {}, l.speaker), ': ', l.text));
+  const nth = cue.nth ? h('p', { class: 'note' }, `The ${ORDINALS[cue.nth - 1] || `number ${cue.nth}`} time these lines come in the scene.`) : null;
+  return h('div', { class: 'cue' }, h('div', { class: 'cue-top' }, h('p', { class: 'cue-label' }, 'Cue'), hearCue(ctx, item, cue)), (cue.lines || [cue]).map(say), cue.notes.map((n) => h('p', { class: 'note' }, n)), nth);
+}
+
 export function statsLine(st) {
   const parts = [`${plural(st.answered, 'answer')}, ${num(st.perfect)} word perfect.`];
   if (st.learnedItems) parts.push(`${plural(st.learnedItems, 'line')} learned (${plural(st.learnedWords, 'word')}).`);
@@ -79,6 +101,7 @@ const RIGHT_WITH = { gaps: 'Right with the gaps', help: 'Right with the first le
 // 'resume' to carry on the one saved.
 export async function showSprint(ctx, { scope = 'all', minutes = null, custom = null, extra = null, practice = null } = {}) {
   const today = ctx.today();
+  const notesSeen = (await ctx.store.get('scienceSeen')) || 0;
   const length = (minutes ?? ctx.settings.sprintMinutes) * 60000;
   const short = minutes != null && minutes <= 2;
   const key = practice ? PRACTICE : SAVED;
@@ -177,29 +200,8 @@ export async function showSprint(ctx, { scope = 'all', minutes = null, custom = 
 
   // The cue: who speaks and what they say, or the start of a scene. A cue made longer, so that only
   // one line fits, shows the lines before it too, and which time it comes if the exchange repeats.
-  function cueBlock(c) {
-    const cue = c.cue;
-    const say = (l) => (l.speaker === null ? h('p', {}, `Start of ${l.text}`) : h('p', {}, h('strong', {}, l.speaker), ': ', l.text));
-    const nth = cue.nth ? h('p', { class: 'note' }, `The ${ORDINALS[cue.nth - 1] || `number ${cue.nth}`} time these lines come in the scene.`) : null;
-    return h('div', { class: 'cue' }, h('div', { class: 'cue-top' }, h('p', { class: 'cue-label' }, 'Cue'), hearCue(ctx, c.item, cue)), (cue.lines || [cue]).map(say), cue.notes.map((n) => h('p', { class: 'note' }, n)), nth);
-  }
-
   const readAloud = (text) =>
     canSpeak() ? button('Read aloud', () => speak(text, { voiceURI: ctx.settings.voiceURI, rate: ctx.settings.rate })) : null;
-
-  // The page scrolls behind the bar and the footer (the keypad, or the buttons), so a long cue and a
-  // long line can push the line being answered out of sight. Scrolls down just enough to show `el`
-  // above the footer, keeping its top below the bar.
-  function keepInView(el) {
-    if (!el || !el.isConnected) return;
-    const bar = ctx.root.querySelector('.bar');
-    const foot = ctx.root.querySelector('footer');
-    const top = bar ? bar.getBoundingClientRect().bottom : 0;
-    const bottom = foot ? foot.getBoundingClientRect().top : window.innerHeight;
-    const r = el.getBoundingClientRect();
-    const by = Math.min(r.bottom + 8 - bottom, r.top - 8 - top);
-    if (by > 0) window.scrollBy(0, by);
-  }
 
   // Draws a card: the bar, where it is, any message, then the card's own content and actions.
   function frame(c, content, footer, footerClass = '') {
@@ -213,14 +215,14 @@ export async function showSprint(ctx, { scope = 'all', minutes = null, custom = 
   function showCard(c, focus = true) {
     ctx.card = c; // the card on show, for browser tests
     if (c.step === 'test') {
-      frame(c, [cueBlock(c), h('p', { class: 'prompt' }, 'Do you know the next line?')], [
+      frame(c, [cueBlock(ctx, c.item, c.cue), h('p', { class: 'prompt' }, 'Do you know the next line?')], [
         button('Try it', act(() => choose('try')), { class: 'btn primary' }),
         button('Teach me', act(() => choose('teach'))),
       ]);
     } else if (c.step === 'front') {
       frame(
         c,
-        [cueBlock(c), h('p', { class: 'speaker' }, c.item.speaker), h('p', { class: 'line' }, tokenView(c.item.tokens)), h('p', { class: 'prompt' }, c.prompt)],
+        [cueBlock(ctx, c.item, c.cue), h('p', { class: 'speaker' }, c.item.speaker), h('p', { class: 'line' }, tokenView(c.item.tokens)), h('p', { class: 'prompt' }, c.prompt)],
         [button('Next', act(() => choose('next')), { class: 'btn primary' }), readAloud(c.item.text)].filter(Boolean),
       );
     } else if (c.step === 'help' || c.step === 'gaps') helpCard(c);
@@ -257,7 +259,7 @@ export async function showSprint(ctx, { scope = 'all', minutes = null, custom = 
           words.append(b);
         });
         clear(answerArea).append(h('p', { class: 'prompt' }, 'Tap any word you missed or changed.'), words);
-        keepInView(answerArea);
+        keepInView(ctx.root, answerArea);
         let sent = false; // a quick second tap is not a second answer
         clear(footBox).append(
           button('Done', act(() => {
@@ -287,7 +289,7 @@ export async function showSprint(ctx, { scope = 'all', minutes = null, custom = 
     const footBox = h('div', { class: 'stack-foot' });
     const blanks = item.tokens.some((t, i) => t.k !== null && !shown.has(i));
     const prompt = c.step === 'gaps' ? 'Say it aloud, gaps too, then reveal it.' : blanks ? 'Say it aloud, blanks too, then reveal it.' : 'Say it aloud from the first letters, then reveal it.';
-    frame(c, [cueBlock(c), h('p', { class: 'speaker' }, speakerName(item)), answerArea], [footBox]);
+    frame(c, [cueBlock(ctx, c.item, c.cue), h('p', { class: 'speaker' }, speakerName(item)), answerArea], [footBox]);
     sayCheck(item.tokens, answerArea, footBox, prompt, (misses, ms) => finish(c, makeResult({ misses, mode: 'say', ms })));
   }
 
@@ -306,7 +308,7 @@ export async function showSprint(ctx, { scope = 'all', minutes = null, custom = 
       focusHeading(ctx.root);
     }), { class: 'btn link' });
 
-    frame(c, [cueBlock(c), speakerArea, answerArea, switchMode], [footBox]);
+    frame(c, [cueBlock(ctx, c.item, c.cue), speakerArea, answerArea, switchMode], [footBox]);
     const foot = ctx.root.querySelector('footer');
 
     let answerStart = 0;
@@ -351,7 +353,7 @@ export async function showSprint(ctx, { scope = 'all', minutes = null, custom = 
       const check = createTypeCheck(tokens);
       const line = h('p', { class: 'line answer' });
       // Said or mouthed, a line is remembered better than in the head alone (the production effect).
-      const hint = h('p', { class: 'help type-hint' }, 'Say or mouth each word as you tap its first letter. ? shows the next word.');
+      const hint = h('p', { class: 'help type-hint' }, TYPE_HINT);
       const draw = () => clear(line).append(...tokenView(tokens, check.shownUpTo, new Set(check.misses)));
       draw();
       answerArea.append(hint, line); // above the line, or the keypad would cover it on a small phone
@@ -362,7 +364,7 @@ export async function showSprint(ctx, { scope = 'all', minutes = null, custom = 
         if (firstMs === undefined) firstMs = timed(answerStart);
         hint.remove();
         draw();
-        keepInView(line.lastElementChild || line); // on a long line the whole line may not fit above the keypad
+        keepInView(ctx.root, line.lastElementChild || line); // on a long line the whole line may not fit above the keypad
         announce(`${r.correct ? '' : 'Missed: '}${tokens[r.index].d}`);
         if (!r.done) return;
         // One or two wrong keys, each touching the right one, and nothing else wrong: he may say it
@@ -374,7 +376,7 @@ export async function showSprint(ctx, { scope = 'all', minutes = null, custom = 
       removeKeys = pad.remove;
       clear(footBox).append(pad.el);
       foot.className = 'foot keyboard';
-      keepInView(hint);
+      keepInView(ctx.root, hint);
     }
 
     function sayAnswer() {
@@ -423,7 +425,7 @@ export async function showSprint(ctx, { scope = 'all', minutes = null, custom = 
     frame(
       { ...c, message: null },
       [
-        cueBlock(c),
+        cueBlock(ctx, c.item, c.cue),
         h('p', { class: 'speaker' }, c.item.speaker),
         h('p', { class: 'line' }, tokenView(c.item.tokens, c.item.tokens.length, misses)),
         block,
@@ -433,7 +435,7 @@ export async function showSprint(ctx, { scope = 'all', minutes = null, custom = 
       [button('Next', act(next), { class: 'btn primary' }), slipped ? button('A slip of the finger? Count it right', act(() => countRight(c, result, rec))) : null].filter(Boolean),
     );
     ctx.root.querySelector('footer .btn').focus({ preventScroll: true });
-    keepInView(block);
+    keepInView(ctx.root, block);
     if (result.pass && ctx.settings.autoAdvance) autoTimer = setTimeout(next, AUTO_ADVANCE_MS);
   }
 
@@ -475,6 +477,13 @@ export async function showSprint(ctx, { scope = 'all', minutes = null, custom = 
     ctx.go('today');
   }
 
+  // One short note on why this works, a different one each sprint.
+  function science() {
+    if (!ctx.settings.scienceNotes) return null;
+    ctx.store.set('scienceSeen', notesSeen + 1);
+    return h('p', { class: 'science' }, scienceNote(notesSeen));
+  }
+
   function plain(title, body, footer) {
     quiet();
     clear(ctx.root).append(screen({ title, back: act(stop), backLabel: 'Today', body: [rewardCard(ctx), ...body], footer }));
@@ -508,7 +517,7 @@ export async function showSprint(ctx, { scope = 'all', minutes = null, custom = 
       }
     }, 10000);
     const left = chosen ? linesLeft(session.state) : 0;
-    plain('Sprint done', [h('p', { class: 'lead' }, statsLine(st)), left ? h('p', {}, `${plural(left, 'line')} of this ${chosen.run ? 'run through' : 'practice'} still to go.`) : null, h('h2', {}, 'Break'), bar, status], [
+    plain('Sprint done', [h('p', { class: 'lead' }, statsLine(st)), left ? h('p', {}, `${plural(left, 'line')} of this ${chosen.run ? 'run through' : 'practice'} still to go.`) : null, h('h2', {}, 'Break'), bar, status, science()], [
       left
         ? button('Carry on', act(() => ctx.go('sprint', { practice: 'resume' })), { class: 'btn primary' })
         : button('Another sprint', act(() => ctx.go('sprint')), { class: 'btn primary' }),
@@ -547,7 +556,7 @@ export async function showSprint(ctx, { scope = 'all', minutes = null, custom = 
       plan.extraRuns.length ? button('An extra run', act(() => keepGoing('runs')), { class: plan.ahead.length ? 'btn' : 'btn primary' }) : null,
       button('Stop for now', act(() => ctx.go('today'))),
     ].filter(Boolean);
-    plain("Today's plan is done", [h('p', { class: 'lead' }, 'Everything ready for now is done.'), nextCheck, said, h('p', {}, 'Keep going?')], footer);
+    plain("Today's plan is done", [h('p', { class: 'lead' }, 'Everything ready for now is done.'), nextCheck, said, h('p', {}, 'Keep going?'), science()], footer);
   }
 
   const onVisibility = () => {

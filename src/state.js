@@ -74,6 +74,12 @@ export function applyResult(state, { pass, day, time, mode, k = 1, pretest = fal
   return s;
 }
 
+// Typed right from the cue in Already know some?: learned, so it is not taught. It comes back as a line
+// known before teaching does, and that check says whether it has really stayed.
+export function applyKnown(state, { day, time, closeWord = null }) {
+  return { ...state, status: 'review', firstDay: day, learnedDay: day, passes: CRITERION, passDays: [day], stability: FIRST.known, lastResult: 'pass', lastDay: day, lastTime: time, lastMode: 'type', closeWord };
+}
+
 // A go with the first letters right: it says little about memory, so it changes nothing but marks a
 // new line as started. (One missed is a miss like any other: applyResult.)
 export function applyHelp(state, { day }) {

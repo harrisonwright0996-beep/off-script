@@ -59,6 +59,34 @@ export function mapOf(progress) {
   ];
 }
 
+// What Today keeps out of the way with one main button: everything else, a tap away.
+export function showMore(ctx) {
+  const plan = ctx.plan();
+  const entry = (title, what, go) => h('li', {}, button([h('strong', {}, title), h('span', {}, what)], go));
+  ctx.root.append(
+    screen({
+      title: 'More',
+      back: () => ctx.go('today'),
+      backLabel: 'Today',
+      body: [
+        h(
+          'ul',
+          { class: 'scene-list' },
+          plan.done ? null : entry('Just 2 minutes', 'When there is no time for more.', () => ctx.go('sprint', { scope: plan.tests.length ? 'tests' : 'all', minutes: 2 })),
+          plan.done && plan.ahead.length ? entry('Run through', 'In script order, a scene or the whole play.', () => ctx.go('choose', { run: true })) : null,
+          !plan.done ? entry('Run through', 'In script order, a scene or the whole play.', () => ctx.go('choose', { run: true })) : null,
+          plan.done && plan.extraRuns.length ? entry('An extra run', 'Another run of a beat that is coming on.', () => ctx.go('sprint', { extra: 'runs' })) : null,
+          entry('Choose what to practise', 'A scene, and how much help you want.', () => ctx.go('choose')),
+          entry('Scenes', 'Read a scene, or hear it read aloud.', () => ctx.go('scenes')),
+          entry('Already know some?', 'Check them, and skip teaching what you know.', () => ctx.go('checkin')),
+          ctx.settings.showStreaks ? entry('Badges', 'What you have won, and what is still to win.', () => ctx.go('badges')) : null,
+          entry('Settings', 'Dates, audio, text size and everything else.', () => ctx.go('settings')),
+        ),
+      ],
+    }),
+  );
+}
+
 export function showToday(ctx) {
   async function render() {
     if (ctx.update) return location.reload(); // nothing is under way here
@@ -112,7 +140,14 @@ export function showToday(ctx) {
     // In script order: everything learned so far, every line, the whole play or a scene.
     const runThrough = button('Run through', () => ctx.go('choose', { run: true }));
     let footer;
-    if (plan.done) {
+    if (s.oneButton) {
+      const main = !plan.done
+        ? button('Start sprint', () => ctx.go('sprint'), { class: 'btn primary' })
+        : plan.ahead.length
+          ? button('Head start on tomorrow', () => ctx.go('sprint', { extra: 'new' }), { class: 'btn primary' })
+          : button('Run through', () => ctx.go('choose', { run: true }), { class: 'btn primary' });
+      footer = [main, h('div', { class: 'row' }, button('Walk', () => ctx.go('walk')), button('More', () => ctx.go('more')))];
+    } else if (plan.done) {
       footer = [
         plan.ahead.length ? button('Head start on tomorrow', () => ctx.go('sprint', { extra: 'new' }), { class: 'btn primary' }) : null,
         h(

@@ -94,12 +94,16 @@ export async function openStore(name = DB) {
     // any sprint or practice part way. The script, the audio pack and the settings stay.
     async clearProgress(ids = null) {
       const tx = db.transaction(['items', 'events', 'kv'], 'readwrite');
+      const kv = tx.objectStore('kv');
       if (ids === null) {
         tx.objectStore('items').clear();
         tx.objectStore('events').clear();
+        kv.delete('checkTried');
       } else {
         const gone = new Set(ids);
-        const kv = tx.objectStore('kv');
+        kv.get('checkTried').onsuccess = (e) => {
+          if (e.target.result) kv.put(e.target.result.filter((id) => !gone.has(id)), 'checkTried');
+        };
         kv.get('walkDraft').onsuccess = (e) => {
           const draft = e.target.result;
           if (draft && draft.trials.some((tr) => gone.has(tr.id))) kv.delete('walkDraft');

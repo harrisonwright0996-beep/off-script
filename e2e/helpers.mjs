@@ -47,7 +47,7 @@ export async function chooseFile(page, buttonName, file) {
   await (await chooser).setFiles(file);
 }
 
-export async function importScript(page, url) {
+export async function importScript(page, url, { oneButton = false } = {}) {
   await open(page, url);
   await chooseFile(page, 'Choose the script', { name: 'Night Ferry.docx', mimeType: DOCX, buffer: Buffer.from(buildFixtureDocx()) });
   await expect(page.getByRole('heading', { name: 'Is this the script?' })).toBeVisible();
@@ -56,6 +56,14 @@ export async function importScript(page, url) {
   await expect(page.getByRole('heading', { name: 'Your dates' })).toBeVisible();
   await page.getByRole('button', { name: 'Looks right' }).click();
   await expect(page.getByRole('heading', { name: 'Today' })).toBeVisible();
+  // Most tests reach for Today's buttons directly: one main button has its own tests.
+  if (!oneButton) {
+    await page.evaluate(async () => {
+      await window.offScript.saveSettings({ oneButton: false });
+      await window.offScript.go('today');
+    });
+    await expect(page.getByRole('button', { name: 'Settings' })).toBeVisible();
+  }
 }
 
 // From Today: imports the invented play's audio pack in Settings, then back to Today.

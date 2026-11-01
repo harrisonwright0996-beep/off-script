@@ -4,6 +4,8 @@
 import { h, tooSoon } from './dom.js';
 import { KEY_ROWS as ROWS } from '../grade.js';
 
+export const TYPE_HINT = 'Say or mouth each word as you tap its first letter. ? shows the next word.';
+
 export function keypad(onKey) {
   const el = h(
     'div',

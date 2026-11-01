@@ -10,7 +10,7 @@ import { addSeconds, cleanStreak, creditFor, noteSlips, rebuildStreak } from './
 import { clear, focusHeading } from './ui/dom.js';
 import { showInstall, needsInstall } from './ui/install.js';
 import { showSetup } from './ui/setup.js';
-import { showToday } from './ui/today.js';
+import { showToday, showMore } from './ui/today.js';
 import { showSprint } from './ui/sprint.js';
 import { showScenes, showReader } from './ui/scenes.js';
 import { showSettings } from './ui/settings.js';
@@ -18,12 +18,13 @@ import { showWalk } from './ui/walk.js';
 import { showChoose } from './ui/choose.js';
 import { showStartAgain } from './ui/again.js';
 import { showBadges } from './ui/badges.js';
+import { showCheckin } from './ui/checkin.js';
 
-const SCREENS = { install: showInstall, setup: showSetup, today: showToday, sprint: showSprint, scenes: showScenes, reader: showReader, settings: showSettings, walk: showWalk, choose: showChoose, again: showStartAgain, badges: showBadges };
+const SCREENS = { install: showInstall, setup: showSetup, today: showToday, sprint: showSprint, scenes: showScenes, reader: showReader, settings: showSettings, walk: showWalk, choose: showChoose, again: showStartAgain, badges: showBadges, checkin: showCheckin, more: showMore };
 const EVENT_DAYS = 9; // the plan looks back this far
 // A new version restarts the app on these, as it does on Today. Everywhere else something may be under
 // way: a sprint, a walk, a scene read aloud, or typing.
-const AT_REST = new Set(['scenes', 'choose']);
+const AT_REST = new Set(['scenes', 'choose', 'more']);
 
 export function applyLook(s) {
   const root = document.documentElement;

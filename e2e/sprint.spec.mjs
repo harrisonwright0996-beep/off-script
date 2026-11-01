@@ -447,3 +447,25 @@ test('with close lines off, one word out of a long line is a miss', async ({ pag
   await page.keyboard.type((keys[0] === 'z' ? 'x' : 'z') + keys.slice(1));
   await expect(page.locator('.result.misses')).toHaveText(/One miss: /);
 });
+
+test('a note on why it works after a sprint, a different one each time, and it can be turned off', async ({ page }) => {
+  await importScript(page);
+  await page.evaluate(() => (window.offScript.settings.sprintMinutes = 0.02)); // a one second sprint
+  const sprintOut = async () => {
+    await page.getByRole('button', { name: 'Start sprint' }).click();
+    await page.waitForTimeout(1300);
+    for (let i = 0; i < 20 && !(await page.getByRole('heading', { name: 'Sprint done' }).isVisible()); i++) await answerCard(page);
+    await expect(page.getByRole('heading', { name: 'Sprint done' })).toBeVisible();
+  };
+  await sprintOut();
+  const one = await page.locator('.science').textContent();
+  expect(one.length).toBeGreaterThan(20);
+  await page.getByRole('button', { name: 'Stop for now' }).click();
+  await sprintOut();
+  const two = await page.locator('.science').textContent();
+  expect(two).not.toBe(one);
+  await page.getByRole('button', { name: 'Stop for now' }).click();
+  await page.evaluate(() => (window.offScript.settings.scienceNotes = false));
+  await sprintOut();
+  await expect(page.locator('.science')).toHaveCount(0);
+});

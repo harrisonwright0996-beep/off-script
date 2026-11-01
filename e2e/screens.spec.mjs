@@ -275,3 +275,72 @@ test('the typing hint sits above the line, where the keypad cannot cover it, and
   });
   expect(gap).toBeGreaterThanOrEqual(0);
 });
+
+test('one main button: Today has Start sprint, Walk and More, and More has the rest', async ({ page }) => {
+  await importScript(page, undefined, { oneButton: true });
+  await expect(page.locator('footer .btn')).toHaveText(['Start sprint', 'Walk', 'More']);
+  await shot(page, 'today-one-button');
+  await page.getByRole('button', { name: 'More', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'More' })).toBeVisible();
+  await shot(page, 'more');
+  for (const name of ['Just 2 minutes', 'Run through', 'Choose what to practise', 'Scenes', 'Already know some?', 'Badges', 'Settings']) await expect(page.getByRole('button', { name })).toBeVisible();
+  await page.getByRole('button', { name: /^Settings/ }).click();
+  await page.getByLabel('One main button, with the rest under More').uncheck();
+  await page.getByRole('button', { name: 'Back', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Choose what to practise' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'More', exact: true })).toHaveCount(0);
+});
+
+test('already know some: a line right is not taught, a line wrong is, and two misses in a row skip the scene', async ({ page }) => {
+  await importScript(page);
+  await page.getByRole('button', { name: 'Scenes' }).click();
+  await page.getByRole('button', { name: 'Already know some? Check them' }).click();
+  await expect(page.getByRole('heading', { name: 'Already know some?' })).toBeVisible();
+  await page.getByRole('button', { name: 'Yes, check what I know' }).click();
+  await expect(page.locator('.where')).toHaveText('Checking your lines: 1 of 23');
+  const items = await page.evaluate(() => window.offScript.model.items.map((it) => ({ id: it.id, scene: it.scene, keys: it.tokens.filter((t) => t.k !== null).map((t) => t.k).join('') })));
+  await page.keyboard.type(items[0].keys);
+  await expect(page.locator('.result.perfect')).toHaveText(/Word perfect/);
+  await expect(page.locator('.where')).toHaveText('Checking your lines: 2 of 23');
+  const known = await page.evaluate((id) => window.offScript.getState(id), items[0].id);
+  expect(known.status).toBe('review');
+  expect(known.stability).toBe(4);
+
+  const wrong = (keys) => (keys[0] === 'z' ? 'x' : 'z') + (keys[1] === 'z' ? 'x' : 'z') + keys.slice(2);
+  await page.keyboard.type(wrong(items[1].keys));
+  await expect(page.locator('.result.misses')).toHaveText(/You will learn it/);
+  await page.keyboard.type(wrong(items[2].keys));
+  if (items[3].scene === items[2].scene) await expect(page.locator('.result.misses')).toHaveText(/skip the rest of this scene/);
+  expect(await page.evaluate((id) => window.offScript.getState(id).status, items[1].id)).toBe('new');
+
+  await page.getByRole('button', { name: 'That is enough, teach me' }).click();
+  await expect(page.getByRole('heading', { name: 'All checked' })).toBeVisible();
+  await expect(page.getByText('You already know 1 line.')).toBeVisible();
+  await page.getByRole('button', { name: 'Back to Today' }).click();
+  await expect(page.getByRole('heading', { name: 'Today' })).toBeVisible();
+
+  // Each line has one try: the check goes on from those not tried.
+  await page.getByRole('button', { name: 'Scenes' }).click();
+  await page.getByRole('button', { name: 'Already know some? Check them' }).click();
+  await page.getByRole('button', { name: 'Yes, check what I know' }).click();
+  await expect(page.locator('.where')).toHaveText('Checking your lines: 1 of 20');
+});
+
+test('already know some: with every line tried it says so, the offer goes from Scenes, and Start again brings it back', async ({ page }) => {
+  await importScript(page);
+  await page.evaluate(async () => {
+    const o = window.offScript;
+    await o.store.set('checkTried', o.model.items.map((it) => it.id));
+    await o.go('checkin');
+  });
+  await expect(page.getByText('You have checked all you can.')).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Yes, check what I know' })).toHaveCount(0);
+  await page.getByRole('button', { name: 'Back to Today' }).click();
+  await page.getByRole('button', { name: 'Scenes' }).click();
+  await expect(page.getByRole('button', { name: 'Already know some? Check them' })).toHaveCount(0);
+  await page.evaluate(async () => {
+    await window.offScript.store.clearProgress();
+  });
+  expect(await page.evaluate(() => window.offScript.store.get('checkTried'))).toBeUndefined();
+});
+
